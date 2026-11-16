@@ -225,7 +225,8 @@ const GROW_CHECK_MS = 30_000; // after that, it shrinks when content grows, and 
 
 /**
  * Pages fit the screen instead of scrolling: a TV has nobody to scroll it. The page is zoomed out until it fits,
- * down to MIN_ZOOM; anything still taller is cut off at the bottom. Zooming out lays the page out wider, and the
+ * down to MIN_ZOOM. A page that doesn't fit even then (a long list) shows at full size instead, cut off at the
+ * bottom, so its first rows stay readable. Zooming out lays the page out wider, and the
  * breakpoints follow that width (data-vw, see index.css), so the widgets move side by side instead of only
  * getting smaller. The kiosk's own zoom setting is then the largest size a page is shown at.
  *
@@ -237,7 +238,7 @@ function useFitToScreen(mainRef: RefObject<HTMLElement | null>, pageRef: RefObje
     document.documentElement.dataset.kiosk = '';
     const main = mainRef.current, page = pageRef.current;
     if (!main || !page) return;
-    let zoom = 1, timer: ReturnType<typeof setTimeout> | undefined;
+    let zoom = 1, clipped = false, timer: ReturnType<typeof setTimeout> | undefined;
     const shownAt = performance.now();
     const apply = (z: number) => {
       const width = main.clientWidth / z;
@@ -247,6 +248,7 @@ function useFitToScreen(mainRef: RefObject<HTMLElement | null>, pageRef: RefObje
     const fits = () => main.scrollHeight <= main.clientHeight + 1; // reading it lays the page out at once
     // the largest zoom up to `from` that fits: down in steps, then halve the last step three times
     const search = (from: number) => {
+      clipped = false;
       let bad: number | null = null;
       for (let z = from; z >= MIN_ZOOM - 1e-9; z = Math.round((z - ZOOM_STEP) * 1000) / 1000) {
         apply(z);
@@ -260,21 +262,28 @@ function useFitToScreen(mainRef: RefObject<HTMLElement | null>, pageRef: RefObje
         apply(ok);
         return ok;
       }
-      apply(MIN_ZOOM);
-      return MIN_ZOOM;
+      clipped = true;
+      apply(1);
+      return 1;
     };
     zoom = search(1);
     let size = `${main.clientWidth}x${main.clientHeight}`;
     const check = () => {
       const now = `${main.clientWidth}x${main.clientHeight}`;
       if (now !== size || performance.now() - shownAt < SETTLE_MS) { size = now; zoom = search(1); }
-      else if (!fits()) zoom = search(zoom);
+      else if (!clipped && !fits()) zoom = search(zoom);
     };
     const ro = new ResizeObserver(() => { clearTimeout(timer); timer = setTimeout(check, 200); });
     ro.observe(main);
     ro.observe(page);
     const grow = setInterval(() => {
-      if (zoom >= 1 || !fits()) return check();
+      if (clipped) { // does it fit now?
+        apply(MIN_ZOOM);
+        if (fits()) zoom = search(1); else apply(1);
+        return;
+      }
+      if (!fits()) { zoom = search(zoom); return; }
+      if (zoom >= 1) return;
       apply(Math.min(1, zoom + ZOOM_STEP));
       if (fits()) zoom = search(1); // content got shorter: there is room to grow
       else apply(zoom);
