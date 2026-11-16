@@ -4,7 +4,7 @@ import type {
   Device, DeviceCreated, Kiosk, KioskConfig,
   BreakdownRow, ClickRow, ErrorGroup, EventsResponse, GeoResponse, HttpErrorGroup, LogsResponse, Me, Member, MetricInfo,
   MetricSeriesResponse, PageRow, Project, ServiceRow, StatsResponse, Totals, TraceResponse, TraceSummary, VitalsResponse, FieldsResponse, FieldValuesResponse, FilterScope, SlackIntegration, Trigger, TriggerInput, TriggerTestResult, SlackSetup,
-  SavedView, SavedViewInput, Goal, GoalInput, ConversionsResponse,
+  SavedView, SavedViewInput, Goal, GoalInput, GoalStep, GoalFunnel, ConversionsResponse,
 } from './contract';
 import { previousWindow, type TimeRange } from '../lib/time';
 import { botsParam, filtersParam } from '../lib/filters';
@@ -56,6 +56,14 @@ export const useConversions = (pid: string, r: TimeRange) => useQuery(q<Conversi
 export function usePreviousConversions(pid: string, r: TimeRange) {
   const w = previousWindow(r);
   return useQuery({ ...q<ConversionsResponse>(pid, 'conversions', { ...r, ...w }, 'conversions', { series: 0 }), staleTime: 10 * 60_000 });
+}
+/**
+ * How sessions reach one goal. `steps` previews unsaved funnel steps (undefined = the goal's own). Keyed under
+ * 'conversions' so goal edits refetch it too.
+ */
+export function useGoalFunnel(pid: string, goalId: string, r: TimeRange, steps?: GoalStep[]) {
+  const o = q<GoalFunnel>(pid, 'conversions', r, `goals/${goalId}/funnel`, { steps: steps && JSON.stringify(steps) });
+  return useQuery({ ...o, queryKey: [...o.queryKey, 'funnel', goalId] as const });
 }
 export const useServices = (pid: string, r: TimeRange) => useQuery(q<ServiceRow[]>(pid, 'services', r, 'services'));
 export const useMetrics = (pid: string, r: TimeRange) => useQuery(q<MetricInfo[]>(pid, 'metrics', r, 'metrics'));

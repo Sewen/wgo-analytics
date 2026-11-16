@@ -18,6 +18,7 @@ import { NetworkPage } from './pages/Network';
 import { EventsPage } from './pages/Events';
 import { TriggersPage } from './pages/Triggers';
 import { GoalsPage } from './pages/Goals';
+import { GoalFunnelPage } from './pages/GoalFunnel';
 import { TracesPage } from './pages/Traces';
 import { LogsPage } from './pages/Logs';
 import { MetricsPage } from './pages/Metrics';
@@ -56,7 +57,7 @@ function Authed({ email }: { email: string }) {
       case 'errors': return <ErrorsPage />;
       case 'network': return <NetworkPage />;
       case 'events': return <EventsPage />;
-      case 'goals': return <GoalsPage />;
+      case 'goals': return sub ? <GoalFunnelPage goalId={sub} /> : <GoalsPage />;
       case 'triggers': return <TriggersPage />;
       case 'traces': return <TracesPage traceId={sub ?? null} />;
       case 'logs': return <LogsPage />;

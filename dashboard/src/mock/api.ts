@@ -1,5 +1,6 @@
 import type { Device, Goal, GoalInput, Kiosk, KioskConfig, KioskState, Member, Project, SavedView, SavedViewInput, SlackIntegration, Trigger, TriggerInput } from '../api/contract';
 import * as D from './data';
+import { funnel } from './funnel';
 import { hex } from './rng';
 import * as F from './filters';
 
@@ -107,18 +108,30 @@ export function handleApi(method: string, url: URL, body: unknown, email: string
     }
     case 'goals': {
       const list = ((db.goals ??= {})[pid] ??= []);
-      const id = parts[3];
+      const [, , , id, action] = parts;
       const input = (body ?? {}) as Partial<GoalInput>;
       if (input.name !== undefined && (!input.name.trim() || input.name.trim().length > 120)) throw new MockHttpError(400, 'Goal name must be 1-120 characters');
       if (input.filters !== undefined && !input.filters.length) throw new MockHttpError(400, 'A goal needs at least one filter');
+      if (input.steps !== undefined) {
+        if (input.steps.length > 6) throw new MockHttpError(400, 'A goal can have at most 6 funnel steps');
+        input.steps.forEach((st, i) => {
+          if (!st.name?.trim() || st.name.trim().length > 80) throw new MockHttpError(400, `Step ${i + 1} needs a name of 1-80 characters`);
+          if (!st.filters?.length) throw new MockHttpError(400, `Step ${i + 1} needs at least one filter`);
+        });
+        input.steps = input.steps.map((st) => ({ name: st.name.trim(), filters: st.filters }));
+      }
       if (!id && method === 'POST') {
         if (input.name === undefined || !input.filters) throw new MockHttpError(400, 'A goal needs a name and at least one filter');
-        const g: Goal = { id: crypto.randomUUID(), name: input.name.trim(), filters: input.filters, createdBy: email, createdAt: new Date().toISOString() };
+        const g: Goal = { id: crypto.randomUUID(), name: input.name.trim(), filters: input.filters, steps: input.steps ?? [], createdBy: email, createdAt: new Date().toISOString() };
         list.push(g); save(db); return g;
       }
       const g = list.find((x) => x.id === id);
       if (id && !g) throw new MockHttpError(404, 'Goal not found');
-      if (g && method === 'PATCH') { if (input.name) g.name = input.name.trim(); if (input.filters) g.filters = input.filters; save(db); return g; }
+      if (g && action === 'funnel') {
+        const raw = qp('steps');
+        return funnel(from, to, g, raw === undefined ? null : JSON.parse(raw), F.parse(qp('filters')));
+      }
+      if (g && method === 'PATCH') { if (input.name) g.name = input.name.trim(); if (input.filters) g.filters = input.filters; if (input.steps) g.steps = input.steps; save(db); return g; }
       if (g && method === 'DELETE') { db.goals![pid] = list.filter((x) => x.id !== id); save(db); return { ok: true }; }
       return list;
     }

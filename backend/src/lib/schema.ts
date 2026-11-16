@@ -252,4 +252,6 @@ export const SCHEMA_STATEMENTS: string[] = [
      created_at timestamptz NOT NULL DEFAULT now(),
      PRIMARY KEY (project_id, id)
    )`,
+  // funnel steps before a goal (GoalStep[] JSON; NULL = none)
+  `ALTER TABLE goals ADD COLUMN IF NOT EXISTS steps jsonb`,
 ];

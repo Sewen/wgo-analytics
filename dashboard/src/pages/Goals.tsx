@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ListTree, Pencil, Plus, Target, Trash2 } from 'lucide-react';
+import { ListTree, Pencil, Plus, Target, Trash2, Workflow } from 'lucide-react';
 import type { ConversionsResponse, Filter, Goal, GoalConversions } from '../api/contract';
 import { useConversions, useDeleteGoal, useGoals, usePreviousConversions, useSaveGoal } from '../api/hooks';
 import { Sparkline } from '../charts/Sparkline';
@@ -89,7 +89,7 @@ function GoalDialog({ open, initial, prefill, onClose }: { open: boolean; initia
   );
 }
 
-const COLS = 'grid-cols-[minmax(220px,2fr)_100px_110px_130px_minmax(120px,1fr)_96px]';
+const COLS = 'grid-cols-[minmax(220px,2fr)_100px_110px_130px_minmax(120px,1fr)_124px]';
 
 function GoalRow({ g, all, prevRate, goal, onEdit }: { g: GoalConversions; all: ConversionsResponse; prevRate: number | null; goal: Goal | undefined; onEdit: (g: Goal) => void }) {
   const { project } = useProject(); const route = useRoute();
@@ -99,7 +99,7 @@ function GoalRow({ g, all, prevRate, goal, onEdit }: { g: GoalConversions; all: 
   return (
     <div className={`group grid ${COLS} items-center gap-4 border-b border-line/60 px-4 py-3 text-[13px] transition-colors hover:bg-[var(--hl)]`}>
       <div className="min-w-0 space-y-1">
-        <div className="truncate font-medium" title={g.name}>{g.name}</div>
+        <button onClick={() => navigate(pageHref(project.id, `goals/${g.id}`, route.params))} className="block max-w-full truncate text-left font-medium hover:text-accent hover:underline cursor-pointer" title={`${g.name}: funnel and what drives it`}>{g.name}</button>
         <div className="flex flex-wrap gap-1">{g.filters.map((f, i) => <Badge key={i}><span className="max-w-[300px] truncate">{describeFilter(f)}</span></Badge>)}</div>
       </div>
       <div className="text-right tnum">{fmtNum(g.conversions)}</div>
@@ -110,6 +110,7 @@ function GoalRow({ g, all, prevRate, goal, onEdit }: { g: GoalConversions; all: 
       </div>
       <div className="h-8"><Sparkline data={g.series} color="var(--s5)" height={32} /></div>
       <div className="flex items-center justify-end gap-0.5">
+        <button onClick={() => navigate(pageHref(project.id, `goals/${g.id}`, route.params))} className="rounded-md p-1.5 text-muted hover:bg-[var(--hl)] hover:text-fg cursor-pointer" title="Funnel: how sessions reach this goal"><Workflow size={14} /></button>
         <button onClick={() => navigate(goalEventsHref(project.id, route.params, g.filters))} className="rounded-md p-1.5 text-muted hover:bg-[var(--hl)] hover:text-fg cursor-pointer" title="Show this goal’s events"><ListTree size={14} /></button>
         {!kiosk && goal && <>
           <button onClick={() => onEdit(goal)} className="rounded-md p-1.5 text-muted hover:bg-[var(--hl)] hover:text-fg cursor-pointer" title="Edit"><Pencil size={14} /></button>

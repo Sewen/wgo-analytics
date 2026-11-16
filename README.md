@@ -391,7 +391,7 @@ claude mcp add --transport http wgo https://wgo.example.com/mcp
 
 There is no key to copy. The client registers itself, opens a browser, and you sign in with your WGO account.
 It then sees exactly the projects you're a member of, read-only. The tools are:
-- **Product analytics:** `list_projects`, `get_overview`, `top_clicks`, `top_pages`, `goal_conversions`, `list_errors`, `list_failed_requests`, `breakdown`, `web_vitals`, `visitor_locations`, `search_events`
+- **Product analytics:** `list_projects`, `get_overview`, `top_clicks`, `top_pages`, `goal_conversions`, `goal_funnel`, `list_errors`, `list_failed_requests`, `breakdown`, `web_vitals`, `visitor_locations`, `search_events`
 - **OpenTelemetry:** `list_services`, `list_traces`, `get_trace`, `search_logs`, `list_metrics`, `get_metric_series`
 
 Use the dashboard's host (the `McpUrl` stack output). The raw API Gateway URL has no OAuth resource of its own.

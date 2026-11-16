@@ -2,6 +2,7 @@ import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import * as A from '../analytics';
 import * as G from '../goals';
+import * as GF from '../funnel';
 import { HttpError } from '../http';
 import * as P from '../projects';
 
@@ -150,11 +151,22 @@ export function buildMcpServer(email: string): McpServer {
   projectTool(
     'goal_conversions',
     'Conversion goals',
-    'The project\'s conversion goals (events matching filters, e.g. a pageview of /thank-you or a custom checkout event) with conversions, converting sessions and users, and each goal\'s conversion rate: converting sessions / all sessions in the window. Only covers raw data (the project\'s retention).',
+    'The project\'s conversion goals (events matching filters, e.g. a pageview of /thank-you or a custom checkout event) with conversions, converting sessions and users, and each goal\'s conversion rate: converting sessions / all sessions in the window. Use goal_funnel to see how sessions reach a goal. Only covers raw data (the project\'s retention).',
     windowShape,
     async (pid, a) => {
       const c = await G.conversions(pid, { ...windowParams(a), series: '0' });
       return { ...c, goals: c.goals.map(({ series: _s, ...g }) => ({ ...g, rate: c.sessions ? g.sessions / c.sessions : null })) };
+    },
+  );
+
+  projectTool(
+    'goal_funnel',
+    'Goal funnel and drivers',
+    'How sessions reach one conversion goal (id from goal_conversions): the goal\'s funnel steps counted in order with the median time between them and where sessions that stopped left; the segments (entry page, pages viewed or errors hit before converting, traffic source, device, browser, country) that convert clearly better (`best`) or worse (`worst`) than average, with their rate, lift and extra or missed conversions; and the most common first-page journeys with their conversion rate. Only covers raw data (the project\'s retention).',
+    { ...windowShape, goalId: z.string().describe('Goal id from goal_conversions') },
+    async (pid, a) => {
+      const { dims: _d, ...f } = await GF.goalFunnel(pid, String(a.goalId), windowParams(a));
+      return f;
     },
   );
 

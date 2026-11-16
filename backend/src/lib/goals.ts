@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import type { ConversionsResponse, Filter, Goal, GoalInput } from '../contract';
+import type { ConversionsResponse, Filter, Goal, GoalInput, GoalStep } from '../contract';
 import { parseRange } from './analytics';
 import { query } from './db';
 import { filterSql, filtersFrom, parseFilters } from './filters';
@@ -11,11 +11,13 @@ import { HttpError } from './http';
  */
 
 export const MAX_GOALS = 50;
+export const MAX_STEPS = 6;
 const SPARK_BUCKETS = 24;
 
-interface GoalRow { project_id: string; id: string; name: string; filters: Filter[]; created_by: string; created_at: Date }
+interface GoalRow { project_id: string; id: string; name: string; filters: Filter[]; steps: GoalStep[] | null; created_by: string; created_at: Date }
 
-const toGoal = (r: GoalRow): Goal => ({ id: r.id, name: r.name, filters: r.filters, createdBy: r.created_by, createdAt: r.created_at.toISOString() });
+const toGoal = (r: GoalRow): Goal =>
+  ({ id: r.id, name: r.name, filters: r.filters, steps: r.steps ?? [], createdBy: r.created_by, createdAt: r.created_at.toISOString() });
 
 const goalName = (v: unknown) => {
   const n = typeof v === 'string' ? v.trim() : '';
@@ -30,6 +32,22 @@ function goalFilters(v: unknown): Filter[] {
   return list;
 }
 
+/** Funnel steps: at most MAX_STEPS, each with a name and at least one valid events filter. */
+export function goalSteps(v: unknown): GoalStep[] {
+  if (v == null) return [];
+  if (!Array.isArray(v)) throw new HttpError(400, 'steps must be an array');
+  if (v.length > MAX_STEPS) throw new HttpError(400, `A goal can have at most ${MAX_STEPS} funnel steps`);
+  return v.map((raw, i) => {
+    const step = (raw ?? {}) as Record<string, unknown>;
+    const name = typeof step.name === 'string' ? step.name.trim() : '';
+    if (!name || name.length > 80) throw new HttpError(400, `Step ${i + 1} needs a name of 1-80 characters`);
+    const filters = parseFilters(JSON.stringify(step.filters ?? []));
+    if (!filters.length) throw new HttpError(400, `Step ${i + 1} needs at least one filter`);
+    filterSql(filters, 'events', []);
+    return { name, filters };
+  });
+}
+
 export async function listGoals(pid: string): Promise<Goal[]> {
   const rows = await query<GoalRow>('SELECT * FROM goals WHERE project_id = $1 ORDER BY created_at, id LIMIT $2', [pid, MAX_GOALS]);
   return rows.map(toGoal);
@@ -41,22 +59,27 @@ async function getGoal(pid: string, id: string): Promise<GoalRow> {
   return row;
 }
 
+export const findGoal = async (pid: string, id: string): Promise<Goal> => toGoal(await getGoal(pid, id));
+
 export async function createGoal(pid: string, email: string, body: Partial<GoalInput>): Promise<Goal> {
   const name = goalName(body.name);
   const filters = goalFilters(body.filters);
+  const steps = goalSteps(body.steps);
   const [{ n }] = await query<{ n: number }>('SELECT count(*)::int AS n FROM goals WHERE project_id = $1', [pid]);
   if (n >= MAX_GOALS) throw new HttpError(400, `A project can have at most ${MAX_GOALS} goals`);
   const id = randomUUID();
-  await query('INSERT INTO goals (project_id, id, name, filters, created_by) VALUES ($1, $2, $3, $4::jsonb, $5)', [pid, id, name, JSON.stringify(filters), email]);
+  await query('INSERT INTO goals (project_id, id, name, filters, steps, created_by) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, $6)',
+    [pid, id, name, JSON.stringify(filters), JSON.stringify(steps), email]);
   return toGoal(await getGoal(pid, id));
 }
 
 export async function updateGoal(pid: string, id: string, body: Partial<GoalInput>): Promise<Goal> {
   const cur = await getGoal(pid, id);
-  await query('UPDATE goals SET name = $3, filters = $4::jsonb WHERE project_id = $1 AND id = $2', [
+  await query('UPDATE goals SET name = $3, filters = $4::jsonb, steps = $5::jsonb WHERE project_id = $1 AND id = $2', [
     pid, id,
     body.name !== undefined ? goalName(body.name) : cur.name,
     JSON.stringify(body.filters !== undefined ? goalFilters(body.filters) : cur.filters),
+    JSON.stringify(body.steps !== undefined ? goalSteps(body.steps) : cur.steps ?? []),
   ]);
   return toGoal(await getGoal(pid, id));
 }

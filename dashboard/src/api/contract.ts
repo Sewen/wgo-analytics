@@ -260,11 +260,18 @@ export interface SavedView extends SavedViewInput {
 // POST   /api/projects/{pid}/goals   GoalInput     -> Goal
 // PATCH  /api/projects/{pid}/goals/{id}  Partial<GoalInput> -> Goal
 // DELETE /api/projects/{pid}/goals/{id}            -> { ok: true }
+// GET    /api/projects/{pid}/goals/{id}/funnel     -> GoalFunnel (below)
 export interface GoalInput {
   name: string; // 1-120 characters
   filters: Filter[]; // events scope, at least one
+  steps?: GoalStep[]; // optional funnel steps before the goal, in order (at most 6); the goal itself is the last step
+}
+export interface GoalStep {
+  name: string; // 1-80 characters
+  filters: Filter[]; // events scope, at least one
 }
 export interface Goal extends GoalInput {
+  steps: GoalStep[]; // [] when the goal has no funnel steps
   id: string;
   createdBy: string;
   createdAt: string;
@@ -286,6 +293,56 @@ export interface ConversionsResponse {
   sessions: number; // all sessions in range: the denominator of the conversion rate
   users: number;
   goals: GoalConversions[];
+}
+
+// GET /api/projects/{pid}/goals/{id}/funnel?from&to[&filters&bots][&steps=<GoalStep[] JSON>]
+//   How sessions reach one goal, from raw events (the project's retention). `steps` previews unsaved funnel steps in
+//   place of the goal's own. The page filters narrow every number, the denominator included.
+//   - steps: the funnel steps and then the goal. A session reaches step i when it has a matching event at or after the
+//     time it reached step i-1, so the steps count in order.
+//   - drivers: sessions split by entry page, pages viewed and errors hit before converting, source, device, browser
+//     and country, each with its conversion rate. `best` holds segments that convert clearly better than their
+//     baseline (the 95% interval lies above it), sorted by extra conversions; `worst` the ones clearly worse, sorted by
+//     conversions missed. The baseline is the overall rate, except for errors: those compare with the other sessions
+//     that viewed the page the error happened on, since only sessions that get that far can hit it.
+export type DriverDim = 'entry' | 'page' | 'source' | 'device' | 'browser' | 'country' | 'error';
+export interface DriverRow {
+  dim: DriverDim;
+  key: string; // the page path, referrer host or "(direct)", error message or "GET /api/x 500", device, …
+  at: string | null; // errors: the page they happened on
+  sessions: number;
+  converted: number; // of those sessions, how many converted
+  rate: number; // converted / sessions
+  baseline: number; // the rate it's compared with: overall, or for errors the other sessions that viewed `at`
+  lift: number | null; // rate / baseline (null when the baseline is 0)
+  low: number; // 95% (Wilson) interval of the rate
+  high: number;
+  impact: number; // converted - sessions × baseline: extra (+) or missed (-) conversions
+}
+export interface FunnelStepResult {
+  name: string;
+  filters: Filter[];
+  sessions: number; // sessions that reached this step in order
+  medianSeconds: number | null; // median time from the previous step (null for the first step)
+  exits: Array<{ key: string; sessions: number }>; // where the sessions that stopped here left: their last page, top 5
+}
+export interface JourneyRow {
+  pages: string[]; // the session's first pages (up to 3), repeats collapsed; for converting sessions, up to the conversion
+  sessions: number;
+  converted: number;
+  rate: number;
+  low: number; // 95% (Wilson) interval of the rate
+  high: number;
+}
+export interface GoalFunnel {
+  goal: { id: string; name: string; filters: Filter[] };
+  sessions: number; // all sessions in range
+  converted: number; // sessions with a goal event (as /conversions)
+  steps: FunnelStepResult[]; // the funnel steps, then the goal last
+  best: DriverRow[];
+  worst: DriverRow[];
+  dims: Record<DriverDim, DriverRow[]>; // top 25 per dimension by sessions
+  journeys: JourneyRow[]; // top 15 by sessions
 }
 
 // GET /api/projects/{pid}/stats?from&to[&compare=0]
