@@ -1,5 +1,29 @@
 @import "tailwindcss";
 
+/* Breakpoints. In the dashboard they follow the window, as usual. A kiosk screen (html[data-kiosk]) shrinks pages
+   to fit the screen, so they follow the width the page is laid out at instead: the kiosk lists the breakpoints
+   that apply in data-vw (kiosk/KioskApp.tsx). :where() keeps the specificity of the stock variants. */
+@custom-variant sm {
+  @media (width >= 40rem) { :where(:root:not([data-kiosk])) & { @slot; } }
+  :where([data-vw~="sm"]) & { @slot; }
+}
+@custom-variant md {
+  @media (width >= 48rem) { :where(:root:not([data-kiosk])) & { @slot; } }
+  :where([data-vw~="md"]) & { @slot; }
+}
+@custom-variant lg {
+  @media (width >= 64rem) { :where(:root:not([data-kiosk])) & { @slot; } }
+  :where([data-vw~="lg"]) & { @slot; }
+}
+@custom-variant xl {
+  @media (width >= 80rem) { :where(:root:not([data-kiosk])) & { @slot; } }
+  :where([data-vw~="xl"]) & { @slot; }
+}
+@custom-variant 2xl {
+  @media (width >= 96rem) { :where(:root:not([data-kiosk])) & { @slot; } }
+  :where([data-vw~="2xl"]) & { @slot; }
+}
+
 @theme inline {
   --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;

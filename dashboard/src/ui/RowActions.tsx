@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { BellPlus, ListFilter } from 'lucide-react';
+import { BellPlus, ListFilter, Target } from 'lucide-react';
 import type { Filter, FilterScope } from '../api/contract';
 import { cn } from '../lib/format';
 import { FILTER_PARAM, fieldLabel, mergeFilters, needsValue, OP_LABEL, useFilters, valueHint } from '../lib/filters';
@@ -21,24 +21,36 @@ export function newTriggerHref(pid: string, params: URLSearchParams, scope: Filt
   return `/p/${pid}/triggers?${p}`;
 }
 
+/** Link to the Goals page that opens "New goal" for these (events) conditions. */
+export function newGoalHref(pid: string, params: URLSearchParams, filters: Filter[]) {
+  const p = new URLSearchParams();
+  for (const k of ['range', 'from', 'to']) { const v = params.get(k); if (v) p.set(k, v); }
+  p.set('new', '1');
+  p.set('pf', JSON.stringify(filters));
+  return `/p/${pid}/goals?${p}`;
+}
+
+type Mode = 'filter' | 'trigger' | 'goal';
+
 /**
  * Per-row "filter by this" and "trigger on this": pick which of the row's values matter, then either narrow the
- * page to rows like it or get notified when new ones arrive. Shows on row hover (rows need the `group` class)
+ * page to rows like it, get notified when new ones arrive, or (events) count them as a conversion goal. Shows on row hover (rows need the `group` class)
  * unless `labels` is set. `filterPage`: filter that page instead of the current one (e.g. a span → traces list).
  */
 export function RowActions({ scope, conditions, className, labels, filterPage }: {
   scope: FilterScope; conditions: RowCondition[]; className?: string; labels?: boolean; filterPage?: string;
 }) {
-  const [mode, setMode] = useState<'filter' | 'trigger' | null>(null);
+  const [mode, setMode] = useState<Mode | null>(null);
   const anchor = useRef<HTMLDivElement>(null);
   if (isKiosk() || !conditions.length) return null;
-  const open = (m: 'filter' | 'trigger') => (e: React.MouseEvent) => { e.stopPropagation(); setMode(mode === m ? null : m); };
+  const open = (m: Mode) => (e: React.MouseEvent) => { e.stopPropagation(); setMode(mode === m ? null : m); };
   const btn = cn('inline-flex items-center gap-1 rounded-md p-1 text-faint transition-colors hover:bg-[var(--hl)] hover:text-accent cursor-pointer', labels && 'px-2 text-[12px] text-muted');
   return (
     <div ref={anchor} onClick={(e) => e.stopPropagation()}
       className={cn('flex shrink-0 items-center gap-0.5 transition-opacity', labels || mode ? 'opacity-100' : 'opacity-0 group-hover:opacity-100 focus-within:opacity-100', className)}>
       <button className={cn(btn, mode === 'filter' && 'text-accent')} onClick={open('filter')} title="Filter by values from this row"><ListFilter size={13} />{labels && 'Filter by this'}</button>
       <button className={cn(btn, mode === 'trigger' && 'text-accent')} onClick={open('trigger')} title="Create a trigger for rows like this"><BellPlus size={13} />{labels && 'Create trigger'}</button>
+      {scope === 'events' && <button className={cn(btn, mode === 'goal' && 'text-accent')} onClick={open('goal')} title="Make events like this a conversion goal"><Target size={13} />{labels && 'Make goal'}</button>}
       <Popover anchor={anchor} open={!!mode} onClose={() => setMode(null)} width={400}>
         {mode && <ConditionPicker scope={scope} conditions={conditions} mode={mode} filterPage={filterPage} onDone={() => setMode(null)} />}
       </Popover>
@@ -47,7 +59,7 @@ export function RowActions({ scope, conditions, className, labels, filterPage }:
 }
 
 function ConditionPicker({ scope, conditions, mode, filterPage, onDone }: {
-  scope: FilterScope; conditions: RowCondition[]; mode: 'filter' | 'trigger'; filterPage?: string; onDone: () => void;
+  scope: FilterScope; conditions: RowCondition[]; mode: Mode; filterPage?: string; onDone: () => void;
 }) {
   const { project } = useProject();
   const route = useRoute();
@@ -67,10 +79,12 @@ function ConditionPicker({ scope, conditions, mode, filterPage, onDone }: {
     onDone();
   };
   const trigger = () => { navigate(newTriggerHref(project.id, route.params, scope, chosen)); onDone(); };
+  const goal = () => { navigate(newGoalHref(project.id, route.params, chosen)); onDone(); };
+  const HEADING: Record<Mode, string> = { filter: 'Show rows where', trigger: 'Notify me when a new row has', goal: 'Count a conversion when an event has' };
 
   return (
     <div className="space-y-2.5">
-      <div className="text-[12px] font-medium text-muted">{mode === 'filter' ? 'Show rows where' : 'Notify me when a new row has'}</div>
+      <div className="text-[12px] font-medium text-muted">{HEADING[mode]}</div>
       <div className="max-h-[300px] space-y-0.5 overflow-y-auto">
         {conditions.map((c, i) => (
           <label key={i} className="flex cursor-pointer items-start gap-2 rounded-md px-1.5 py-1 text-[12px] hover:bg-[var(--hl)]">
@@ -87,8 +101,11 @@ function ConditionPicker({ scope, conditions, mode, filterPage, onDone }: {
         {mode === 'filter'
           ? <><Button size="sm" variant="ghost" disabled={!chosen.length} onClick={trigger}><BellPlus size={13} />Trigger</Button>
             <Button size="sm" variant="primary" disabled={!chosen.length} onClick={apply}><ListFilter size={13} />Filter</Button></>
+          : mode === 'trigger'
+          ? <><Button size="sm" variant="ghost" disabled={!chosen.length} onClick={apply}><ListFilter size={13} />Filter</Button>
+            <Button size="sm" variant="primary" disabled={!chosen.length} onClick={trigger}><BellPlus size={13} />Create trigger</Button></>
           : <><Button size="sm" variant="ghost" disabled={!chosen.length} onClick={apply}><ListFilter size={13} />Filter</Button>
-            <Button size="sm" variant="primary" disabled={!chosen.length} onClick={trigger}><BellPlus size={13} />Create trigger</Button></>}
+            <Button size="sm" variant="primary" disabled={!chosen.length} onClick={goal}><Target size={13} />Create goal</Button></>}
       </div>
     </div>
   );

@@ -3,8 +3,9 @@ import { useQuery } from '@tanstack/react-query';
 import { api } from '../api/client';
 import { MapCallout } from '../charts/MapCallout';
 import { cellKey, type CalloutGroup, type CalloutMode } from '../charts/geoTypes';
-import { MousePointerClick, Bug, Globe, Eye, Users, Layers, Download, MapPin } from 'lucide-react';
-import { useBreakdown, useClicks, useGeo, usePages, usePreviousTotals, useStats, useVitals } from '../api/hooks';
+import { MousePointerClick, Bug, Globe, Eye, Users, Layers, Download, MapPin, Target } from 'lucide-react';
+import { useBreakdown, useClicks, useConversions, useGeo, usePages, usePreviousConversions, usePreviousTotals, useStats, useVitals } from '../api/hooks';
+import { conversionRate, fmtRate, goalEventsHref, previousRate } from './Goals';
 import { countryName, flag } from '../lib/geo';
 import { clickLabel } from '../lib/events';
 
@@ -94,6 +95,40 @@ function VitalsCard() {
         })}
       </div>
     </Card>
+  );
+}
+
+const GOAL_TILES = 6;
+
+/** Conversion rate per goal, as tiles under the KPIs. Hidden until the project has goals. */
+function GoalTiles() {
+  const { project } = useProject(); const { range } = useTime(); const route = useRoute();
+  const conv = useConversions(project.id, range);
+  const prev = usePreviousConversions(project.id, range);
+  const d = conv.data;
+  if (!d?.goals.length) return null;
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between px-1">
+        <span className="inline-flex items-center gap-1.5 text-[12px] font-medium text-muted"><Target size={13} />Goals · conversion rate of {fmtNum(d.sessions)} sessions</span>
+        <button className="text-[12px] text-accent hover:underline cursor-pointer" onClick={() => navigate(pageHref(project.id, 'goals', route.params))}>{d.goals.length > GOAL_TILES ? `All ${d.goals.length} goals` : 'View goals'}</button>
+      </div>
+      <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
+        {d.goals.slice(0, GOAL_TILES).map((g) => {
+          const rate = conversionRate(g, d), before = previousRate(prev.data, g.id);
+          return (
+            <Card key={g.id} className="cursor-pointer p-4" hover onClick={() => navigate(goalEventsHref(project.id, route.params, g.filters))}>
+              <div className="flex items-center justify-between gap-2 text-muted">
+                <span className="truncate text-[12px] font-medium" title={g.name}>{g.name}</span>
+                {rate != null && before != null && <Delta cur={rate} prev={before} />}
+              </div>
+              <div className="kpi mt-2 text-[28px] font-semibold leading-none tracking-tight">{fmtRate(rate)}</div>
+              <div className="mt-2 truncate text-[11.5px] text-faint">{fmtNum(g.sessions)} sessions · {fmtNum(g.conversions)} conversions</div>
+            </Card>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -223,6 +258,8 @@ export function Overview() {
         <Kpi label="Errors" icon={<Bug size={14} />} cur={T('errors')} prev={P('errors')} spark={sp('error')} color="var(--s8)" invert />
         <Kpi label="HTTP errors" icon={<Globe size={14} />} cur={T('httpErrors')} prev={P('httpErrors')} spark={sp('http_error')} color="var(--s2)" invert />
       </div>
+
+      <GoalTiles />
 
       <div className="grid gap-4 xl:grid-cols-3">
       <Card className="xl:col-span-2">

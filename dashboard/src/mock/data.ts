@@ -2,7 +2,7 @@ import type {
   AnalyticsEvent, BreakdownRow, ClickRow, ErrorGroup, EventType, HttpErrorGroup, LogRecord, MetricInfo, MetricSeriesResponse,
   PageRow, ServiceRow, Span, StatsResponse, Totals, TraceSummary, VitalsResponse, GeoResponse,
 } from '../api/contract';
-import type { Filter } from '../api/contract';
+import type { ConversionsResponse, Filter, Goal } from '../api/contract';
 import { matches } from './filters';
 import { hash, hex, pick, rate, rnd, weighted } from './rng';
 import { BROWSERS, CLICKS, CUSTOM, DEVICES, ERRORS, HTTP_ERRORS, OSES, PAGES, PLACES, REFERRERS, SERVICES } from './universe';
@@ -136,6 +136,38 @@ export function events(p: EventQuery): { events: AnalyticsEvent[]; nextBefore: s
   out.sort((a, b) => Date.parse(b.ts) - Date.parse(a.ts));
   const cut = out.slice(0, p.limit);
   return { events: cut, nextBefore: out.length >= p.limit && last !== null ? cut[cut.length - 1].ts : null };
+}
+
+/**
+ * Goal conversions over the generated events. Long ranges are sampled (every `stride` seconds) and scaled back up:
+ * event counts by the stride, sessions by how many 90 s session blocks were skipped.
+ */
+export function conversions(from: number, to: number, goals: Goal[], filters: Filter[], withSeries: boolean): ConversionsResponse {
+  const lo = Math.floor(from / SEC), hi = Math.ceil(to / SEC);
+  const stride = Math.max(1, Math.ceil((hi - lo) / 40_000));
+  const sessionScale = Math.max(1, stride / BLOCK);
+  const sessions = new Set<string>(), users = new Set<string>();
+  const per = goals.map(() => ({ conversions: 0, sessions: new Set<string>(), users: new Set<string>(), series: new Array<number>(24).fill(0) }));
+  for (let s = lo; s < hi; s += stride) {
+    for (let k = 0; k < 2; k++) {
+      const e = eventAt(s, k);
+      if (!e) continue;
+      const t = Date.parse(e.ts);
+      if (t < from || t >= to || (filters.length && !matches('events', e, filters))) continue;
+      sessions.add(e.sessionId!); users.add(e.anonId!);
+      goals.forEach((g, i) => {
+        if (!matches('events', e, g.filters)) return;
+        const p = per[i];
+        p.conversions += stride; p.sessions.add(e.sessionId!); p.users.add(e.anonId!);
+        p.series[Math.min(23, Math.floor(((t - from) / (to - from)) * 24))] += stride;
+      });
+    }
+  }
+  const n = (set: Set<string>) => Math.round(set.size * sessionScale);
+  return {
+    sessions: n(sessions), users: n(users),
+    goals: goals.map((g, i) => ({ id: g.id, name: g.name, filters: g.filters, conversions: per[i].conversions, sessions: n(per[i].sessions), users: n(per[i].users), series: withSeries ? per[i].series : [] })),
+  };
 }
 
 // ---------- traces ----------

@@ -241,4 +241,15 @@ export const SCHEMA_STATEMENTS: string[] = [
      created_at timestamptz NOT NULL DEFAULT now(),
      PRIMARY KEY (project_id, id)
    )`,
+
+  // conversion goals (lib/goals.ts): events matching `filters` (events scope) count as conversions
+  `CREATE TABLE IF NOT EXISTS goals (
+     project_id uuid NOT NULL,
+     id uuid NOT NULL,
+     name text NOT NULL,
+     filters jsonb NOT NULL,
+     created_by text NOT NULL,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (project_id, id)
+   )`,
 ];

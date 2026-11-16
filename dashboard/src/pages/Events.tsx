@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
-import { BellPlus, ChevronRight, ListTree, Search, X } from 'lucide-react';
+import { BellPlus, ChevronRight, ListTree, Search, Target, X } from 'lucide-react';
 import { eventConditions } from '../lib/rowFilters';
-import { newTriggerHref, RowActions } from '../ui/RowActions';
+import { newGoalHref, newTriggerHref, RowActions } from '../ui/RowActions';
 import { useEvents } from '../api/hooks';
 import type { AnalyticsEvent, EventType, Filter } from '../api/contract';
 import { useProject } from '../lib/project';
@@ -33,6 +33,10 @@ function EventDetails({ e, onSession }: { e: AnalyticsEvent; onSession: (s: stri
         <button className="ml-auto inline-flex items-center gap-1 text-accent hover:underline cursor-pointer"
           onClick={() => navigate(newTriggerHref(project.id, route.params, 'events', triggerFiltersFor(e)))}>
           <BellPlus size={12} />Create trigger from this event
+        </button>
+        <button className="inline-flex items-center gap-1 text-accent hover:underline cursor-pointer"
+          onClick={() => navigate(newGoalHref(project.id, route.params, triggerFiltersFor(e)))}>
+          <Target size={12} />Make this a goal
         </button>
       </div>
       {e.errorStack && <Stack stack={e.errorStack} />}

@@ -28,7 +28,7 @@ import { MetricsPage } from '../pages/Metrics';
  * project members change what it shows from the dashboard; a change starts the rotation over right away.
  *
  * Built to run unattended for months on a Raspberry Pi: it keeps showing the last data while offline, keeps the
- * display awake, hides the cursor, scrolls pages taller than the screen, and reloads itself now and then (only
+ * display awake, hides the cursor, fits each page to the screen, and reloads itself now and then (only
  * when the dashboard is reachable, so Chromium never ends up on its offline error page).
  */
 const POLL_MS = 15_000;
@@ -148,9 +148,10 @@ function Screens({ st, offline }: { st: KioskState; offline: boolean }) {
   }, []);
   const zoom = config.zoom || 1;
 
-  const scrollRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
+  const pageRef = useRef<HTMLDivElement>(null);
   const screenKey = `${i}:${st.version}`;
-  useAutoScroll(scrollRef, screenKey);
+  useFitToScreen(mainRef, pageRef, `${screenKey}:${atScreen}`);
   const idle = useIdleCursor();
 
   return (
@@ -180,8 +181,8 @@ function Screens({ st, offline }: { st: KioskState; offline: boolean }) {
                 <div key={screenKey} className="h-full origin-left grad-bg" style={{ animation: `kiosk-progress ${config.rotateSeconds}s linear forwards` }} />
               </div>
             )}
-            <main ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto [scrollbar-width:none]">
-              {atScreen && <div key={screenKey} className="page-in p-5">{PAGE[scr.page]()}</div>}
+            <main ref={mainRef} className="min-h-0 flex-1 overflow-hidden">
+              {atScreen && <div key={screenKey} ref={pageRef} className="page-in p-5">{PAGE[scr.page]()}</div>}
             </main>
           </div>
           <style>{'@keyframes kiosk-progress { from { transform: scaleX(0) } to { transform: scaleX(1) } }'}</style>
@@ -217,36 +218,69 @@ function Notice({ icon, title, children, pulse }: { icon?: React.ReactNode; titl
   );
 }
 
+const MIN_ZOOM = 0.3, ZOOM_STEP = 0.05;
+const BREAKPOINTS: [string, number][] = [['sm', 640], ['md', 768], ['lg', 1024], ['xl', 1280], ['2xl', 1536]];
+const SETTLE_MS = 6000; // while a screen loads, it is fitted afresh whenever its size changes
+const GROW_CHECK_MS = 30_000; // after that, it shrinks when content grows, and checks now and then if it can grow back
+
 /**
- * Pages taller than the screen scroll by themselves: pause at the top, glide down, pause, back to the top.
- * A TV has nobody to scroll it.
+ * Pages fit the screen instead of scrolling: a TV has nobody to scroll it. The page is zoomed out until it fits,
+ * down to MIN_ZOOM; anything still taller is cut off at the bottom. Zooming out lays the page out wider, and the
+ * breakpoints follow that width (data-vw, see index.css), so the widgets move side by side instead of only
+ * getting smaller. The kiosk's own zoom setting is then the largest size a page is shown at.
+ *
+ * Each try lays the page out once, which is slow on a Raspberry Pi: a full search runs when a screen shows (and
+ * while it loads), later checks only try the zoom next to the current one.
  */
-function useAutoScroll(ref: RefObject<HTMLElement | null>, key: string) {
-  useEffect(() => {
-    const el = ref.current;
-    if (!el) return;
-    el.scrollTop = 0;
-    const PAUSE_MS = 8000, SPEED = 30; // CSS px per second
-    let phase: 'top' | 'down' | 'bottom' = 'top', since = performance.now(), last = since, pos = 0, raf = 0;
-    const step = (t: number) => {
-      const dt = (t - last) / 1000;
-      last = t;
-      const max = el.scrollHeight - el.clientHeight;
-      if (max <= 8) { phase = 'top'; since = t; pos = 0; }
-      else if (phase === 'top' && t - since > PAUSE_MS) phase = 'down';
-      else if (phase === 'down') {
-        pos = Math.min(max, pos + SPEED * dt);
-        el.scrollTop = pos;
-        if (pos >= max) { phase = 'bottom'; since = t; }
-      } else if (phase === 'bottom' && t - since > PAUSE_MS) {
-        el.scrollTo({ top: 0, behavior: 'smooth' });
-        phase = 'top'; since = t; pos = 0;
-      }
-      raf = requestAnimationFrame(step);
+function useFitToScreen(mainRef: RefObject<HTMLElement | null>, pageRef: RefObject<HTMLElement | null>, key: string) {
+  useLayoutEffect(() => {
+    document.documentElement.dataset.kiosk = '';
+    const main = mainRef.current, page = pageRef.current;
+    if (!main || !page) return;
+    let zoom = 1, timer: ReturnType<typeof setTimeout> | undefined;
+    const shownAt = performance.now();
+    const apply = (z: number) => {
+      const width = main.clientWidth / z;
+      page.style.zoom = String(z);
+      page.dataset.vw = BREAKPOINTS.filter(([, px]) => width >= px).map(([bp]) => bp).join(' ');
     };
-    raf = requestAnimationFrame(step);
-    return () => cancelAnimationFrame(raf);
-  }, [ref, key]);
+    const fits = () => main.scrollHeight <= main.clientHeight + 1; // reading it lays the page out at once
+    // the largest zoom up to `from` that fits: down in steps, then halve the last step three times
+    const search = (from: number) => {
+      let bad: number | null = null;
+      for (let z = from; z >= MIN_ZOOM - 1e-9; z = Math.round((z - ZOOM_STEP) * 1000) / 1000) {
+        apply(z);
+        if (!fits()) { bad = z; continue; }
+        let ok = z;
+        for (let k = 0; bad !== null && k < 3; k++) {
+          const mid = (ok + bad) / 2;
+          apply(mid);
+          if (fits()) ok = mid; else bad = mid;
+        }
+        apply(ok);
+        return ok;
+      }
+      apply(MIN_ZOOM);
+      return MIN_ZOOM;
+    };
+    zoom = search(1);
+    let size = `${main.clientWidth}x${main.clientHeight}`;
+    const check = () => {
+      const now = `${main.clientWidth}x${main.clientHeight}`;
+      if (now !== size || performance.now() - shownAt < SETTLE_MS) { size = now; zoom = search(1); }
+      else if (!fits()) zoom = search(zoom);
+    };
+    const ro = new ResizeObserver(() => { clearTimeout(timer); timer = setTimeout(check, 200); });
+    ro.observe(main);
+    ro.observe(page);
+    const grow = setInterval(() => {
+      if (zoom >= 1 || !fits()) return check();
+      apply(Math.min(1, zoom + ZOOM_STEP));
+      if (fits()) zoom = search(1); // content got shorter: there is room to grow
+      else apply(zoom);
+    }, GROW_CHECK_MS);
+    return () => { ro.disconnect(); clearTimeout(timer); clearInterval(grow); };
+  }, [mainRef, pageRef, key]);
 }
 
 /** Hide the pointer unless someone moves the mouse. */

@@ -1,4 +1,5 @@
 import * as A from './analytics';
+import * as G from './goals';
 
 type Q = Record<string, string | undefined>;
 export type ProjectRoute = (pid: string, q: Q, rest: string[]) => Promise<unknown>;
@@ -19,6 +20,7 @@ export const READ_ROUTES: Record<string, ProjectRoute> = {
   geo: (pid, q) => A.geo(pid, q),
   fields: (pid, q, rest) => (rest[0] === 'values' ? A.fieldValues(pid, q) : A.fields(pid, q)),
   events: (pid, q) => A.events(pid, q),
+  conversions: (pid, q) => G.conversions(pid, q),
   traces: (pid, q, rest) => (rest[0] ? A.trace(pid, rest[0]) : A.traces(pid, q)),
   services: (pid, q) => A.services(pid, q),
   logs: (pid, q) => A.logs(pid, q),

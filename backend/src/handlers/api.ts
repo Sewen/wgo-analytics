@@ -2,6 +2,7 @@ import type { APIGatewayProxyEventV2WithJWTAuthorizer, APIGatewayProxyResultV2 }
 import { allowlistMessage, emailAllowed } from '../lib/allowlist';
 import { handleError, HttpError, json, jsonBody } from '../lib/http';
 import * as D from '../lib/devices';
+import * as G from '../lib/goals';
 import * as K from '../lib/kiosks';
 import * as P from '../lib/projects';
 import { READ_ROUTES } from '../lib/readRoutes';
@@ -80,6 +81,16 @@ async function route(method: string, parts: string[], q: Q, email: string, event
     if (!id && method === 'POST') return V.createView(pid, email, jsonBody(event));
     if (id && method === 'PATCH') return V.updateView(pid, id, jsonBody(event));
     if (id && method === 'DELETE') { await V.deleteView(pid, id); return { ok: true }; }
+    throw new HttpError(405, 'Method not allowed');
+  }
+
+  if (sub === 'goals') {
+    await P.getProject(email, pid); // authorization: caller must be a member
+    const [id] = rest;
+    if (!id && method === 'GET') return G.listGoals(pid);
+    if (!id && method === 'POST') return G.createGoal(pid, email, jsonBody(event));
+    if (id && method === 'PATCH') return G.updateGoal(pid, id, jsonBody(event));
+    if (id && method === 'DELETE') { await G.deleteGoal(pid, id); return { ok: true }; }
     throw new HttpError(405, 'Method not allowed');
   }
 

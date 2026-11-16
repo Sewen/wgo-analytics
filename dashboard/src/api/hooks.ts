@@ -4,7 +4,7 @@ import type {
   Device, DeviceCreated, Kiosk, KioskConfig,
   BreakdownRow, ClickRow, ErrorGroup, EventsResponse, GeoResponse, HttpErrorGroup, LogsResponse, Me, Member, MetricInfo,
   MetricSeriesResponse, PageRow, Project, ServiceRow, StatsResponse, Totals, TraceResponse, TraceSummary, VitalsResponse, FieldsResponse, FieldValuesResponse, FilterScope, SlackIntegration, Trigger, TriggerInput, TriggerTestResult, SlackSetup,
-  SavedView, SavedViewInput,
+  SavedView, SavedViewInput, Goal, GoalInput, ConversionsResponse,
 } from './contract';
 import { previousWindow, type TimeRange } from '../lib/time';
 import { botsParam, filtersParam } from '../lib/filters';
@@ -26,7 +26,7 @@ export function useMe() {
 // which filter scope (URL param) applies to each endpoint
 const SCOPE: Record<string, FilterScope | undefined> = {
   stats: 'events', totals: 'events', clicks: 'events', pages: 'events', errors: 'events', 'http-errors': 'events', breakdown: 'events',
-  vitals: 'events', geo: 'events', services: 'spans', traces: 'spans',
+  vitals: 'events', geo: 'events', conversions: 'events', services: 'spans', traces: 'spans',
 };
 
 function q<T>(pid: string, name: string, r: TimeRange, path: string, extra: Record<string, string | number | boolean | undefined> = {}, enabled = true) {
@@ -51,6 +51,12 @@ export const useHttpErrors = (pid: string, r: TimeRange) => useQuery(q<HttpError
 export const useBreakdown = (pid: string, r: TimeRange, dim: string) => useQuery(q<BreakdownRow[]>(pid, 'breakdown', r, 'breakdown', { dim }));
 export const useVitals = (pid: string, r: TimeRange) => useQuery(q<VitalsResponse>(pid, 'vitals', r, 'vitals'));
 export const useGeo = (pid: string, r: TimeRange) => useQuery(q<GeoResponse>(pid, 'geo', r, 'geo'));
+export const useConversions = (pid: string, r: TimeRange) => useQuery(q<ConversionsResponse>(pid, 'conversions', r, 'conversions'));
+/** The same-length window before `r`, without sparklines, refreshed far less often (like usePreviousTotals). */
+export function usePreviousConversions(pid: string, r: TimeRange) {
+  const w = previousWindow(r);
+  return useQuery({ ...q<ConversionsResponse>(pid, 'conversions', { ...r, ...w }, 'conversions', { series: 0 }), staleTime: 10 * 60_000 });
+}
 export const useServices = (pid: string, r: TimeRange) => useQuery(q<ServiceRow[]>(pid, 'services', r, 'services'));
 export const useMetrics = (pid: string, r: TimeRange) => useQuery(q<MetricInfo[]>(pid, 'metrics', r, 'metrics'));
 export const useMetricSeries = (pid: string, r: TimeRange, name: string | null, agg: string, groupBy: string) =>
@@ -88,6 +94,7 @@ export function prefetchPage(qc: QueryClient, pid: string, page: string, r: Time
   switch (page) {
     case 'overview': pre('stats', 'stats', { compare: 0 }); pre('pages', 'pages', { limit: 10 }); pre('clicks', 'clicks', { limit: 100 }); break;
     case 'clicks': pre('clicks', 'clicks', { limit: 100 }); break;
+    case 'goals': pre('conversions', 'conversions'); break;
     case 'errors': pre('errors', 'errors', { limit: 100 }); break;
     case 'network': pre('http-errors', 'http-errors', { limit: 100 }); break;
     case 'traces': pre('services', 'services'); pre('traces', 'traces', { limit: 200 }); break;
@@ -218,6 +225,33 @@ export function useDeleteView(pid: string) {
       qc.setQueryData<SavedView[]>(viewsKey(pid), (cur) => cur?.filter((v) => v.id !== id));
     },
     onSettled: () => qc.invalidateQueries({ queryKey: viewsKey(pid) }),
+  });
+}
+
+// ---------- conversion goals ----------
+const goalsKey = (pid: string) => ['goals', pid] as const;
+export const useGoals = (pid: string) =>
+  useQuery({ queryKey: goalsKey(pid), queryFn: () => api<Goal[]>(`${base(pid)}/goals`), staleTime: 60_000 });
+/** Goal changes also change every conversions answer, so those refetch too. */
+const invalidateGoals = (qc: QueryClient, pid: string) =>
+  Promise.all([qc.invalidateQueries({ queryKey: goalsKey(pid) }), qc.invalidateQueries({ queryKey: ['conversions', pid] })]);
+export function useSaveGoal(pid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, input }: { id?: string; input: Partial<GoalInput> }) =>
+      id ? api<Goal>(`${base(pid)}/goals/${id}`, { method: 'PATCH', body: input }) : api<Goal>(`${base(pid)}/goals`, { method: 'POST', body: input }),
+    onSettled: () => invalidateGoals(qc, pid),
+  });
+}
+export function useDeleteGoal(pid: string) {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => api<{ ok: true }>(`${base(pid)}/goals/${id}`, { method: 'DELETE' }),
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: goalsKey(pid) });
+      qc.setQueryData<Goal[]>(goalsKey(pid), (cur) => cur?.filter((g) => g.id !== id));
+    },
+    onSettled: () => invalidateGoals(qc, pid),
   });
 }
 

@@ -1,6 +1,7 @@
 import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import * as A from '../analytics';
+import * as G from '../goals';
 import { HttpError } from '../http';
 import * as P from '../projects';
 
@@ -144,6 +145,17 @@ export function buildMcpServer(email: string): McpServer {
     'Failed fetch/XHR calls made by the browser, grouped by method, normalized route and status (0 = network failure).',
     { ...windowShape, limit: limit(50, 200) },
     (pid, a) => A.httpErrors(pid, { ...windowParams(a), limit: str(a.limit ?? 50) }),
+  );
+
+  projectTool(
+    'goal_conversions',
+    'Conversion goals',
+    'The project\'s conversion goals (events matching filters, e.g. a pageview of /thank-you or a custom checkout event) with conversions, converting sessions and users, and each goal\'s conversion rate: converting sessions / all sessions in the window. Only covers raw data (the project\'s retention).',
+    windowShape,
+    async (pid, a) => {
+      const c = await G.conversions(pid, { ...windowParams(a), series: '0' });
+      return { ...c, goals: c.goals.map(({ series: _s, ...g }) => ({ ...g, rate: c.sessions ? g.sessions / c.sessions : null })) };
+    },
   );
 
   projectTool(

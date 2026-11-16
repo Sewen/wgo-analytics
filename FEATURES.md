@@ -23,6 +23,8 @@ Add one script tag and WGO records every click, pageview, JavaScript error, fail
 without any extra code. Events show up within seconds.
 
 - 👀 Watch a button, page or error and see each hit arrive, with an optional toast or browser notification.
+- 🎯 Make any event a conversion goal: a signup click, a visit to /thank-you or a custom event. WGO shows the
+  share of sessions that convert, how that changed since the previous period, and the trend.
 - 🗺️ A live map shows where visitors are, to the nearest city. Locations come from CloudFront, and IP addresses
   are never stored.
 - 🪶 The browser SDK is about 9 KB gzipped. It batches and compresses events, and holds on to them while the
@@ -92,8 +94,8 @@ chat.
 
 - 🔑 You sign in with your WGO account in the browser. There is no API key to copy.
 - 🔒 Access is read-only and limited to the projects you are a member of.
-- 🧰 Sixteen tools cover the overview, top pages and clicks, errors, failed requests, Web Vitals, visitor
-  locations, traces, logs and metrics.
+- 🧰 Seventeen tools cover the overview, top pages and clicks, conversion goals, errors, failed requests, Web
+  Vitals, visitor locations, traces, logs and metrics.
 
 ```sh
 claude mcp add --transport http wgo https://wgo.example.com/mcp

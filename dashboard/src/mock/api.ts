@@ -1,9 +1,9 @@
-import type { Device, Kiosk, KioskConfig, KioskState, Member, Project, SavedView, SavedViewInput, SlackIntegration, Trigger, TriggerInput } from '../api/contract';
+import type { Device, Goal, GoalInput, Kiosk, KioskConfig, KioskState, Member, Project, SavedView, SavedViewInput, SlackIntegration, Trigger, TriggerInput } from '../api/contract';
 import * as D from './data';
 import { hex } from './rng';
 import * as F from './filters';
 
-interface Db { projects: Project[]; members: Record<string, Member[]>; devices?: Device[]; triggers?: Record<string, Trigger[]>; integrations?: Record<string, SlackIntegration[]>; slackApps?: Record<string, string>; kiosks?: Record<string, Kiosk[]>; views?: Record<string, SavedView[]> }
+interface Db { projects: Project[]; members: Record<string, Member[]>; devices?: Device[]; triggers?: Record<string, Trigger[]>; integrations?: Record<string, SlackIntegration[]>; slackApps?: Record<string, string>; kiosks?: Record<string, Kiosk[]>; views?: Record<string, SavedView[]>; goals?: Record<string, Goal[]> }
 const KEY = 'wgo.mock.db';
 const newKey = () => 'ak_' + hex(28, Date.now(), Math.floor(Math.random() * 1e9));
 
@@ -105,6 +105,24 @@ export function handleApi(method: string, url: URL, body: unknown, email: string
       if (v && method === 'DELETE') { db.views![pid] = list.filter((x) => x.id !== id); save(db); return { ok: true }; }
       return list;
     }
+    case 'goals': {
+      const list = ((db.goals ??= {})[pid] ??= []);
+      const id = parts[3];
+      const input = (body ?? {}) as Partial<GoalInput>;
+      if (input.name !== undefined && (!input.name.trim() || input.name.trim().length > 120)) throw new MockHttpError(400, 'Goal name must be 1-120 characters');
+      if (input.filters !== undefined && !input.filters.length) throw new MockHttpError(400, 'A goal needs at least one filter');
+      if (!id && method === 'POST') {
+        if (input.name === undefined || !input.filters) throw new MockHttpError(400, 'A goal needs a name and at least one filter');
+        const g: Goal = { id: crypto.randomUUID(), name: input.name.trim(), filters: input.filters, createdBy: email, createdAt: new Date().toISOString() };
+        list.push(g); save(db); return g;
+      }
+      const g = list.find((x) => x.id === id);
+      if (id && !g) throw new MockHttpError(404, 'Goal not found');
+      if (g && method === 'PATCH') { if (input.name) g.name = input.name.trim(); if (input.filters) g.filters = input.filters; save(db); return g; }
+      if (g && method === 'DELETE') { db.goals![pid] = list.filter((x) => x.id !== id); save(db); return { ok: true }; }
+      return list;
+    }
+    case 'conversions': return D.conversions(from, to, db.goals?.[pid] ?? [], F.parse(qp('filters')), qp('series') !== '0');
     case 'triggers': {
       const list = ((db.triggers ??= {})[pid] ??= []);
       const [, , , id, action] = parts;
@@ -200,7 +218,7 @@ export function handleKiosk(url: URL, token: string): unknown {
       const project = db.projects.find((p) => p.id === pid)!;
       return { kiosk: { id: k.id, name: k.name }, project: { id: pid, name: project.name }, config: k.config, reloadAt: k.reloadAt, version: `${k.updatedAt}.${k.reloadAt}` } satisfies KioskState;
     }
-    if (/^(kiosks|members|triggers|integrations|slack|rotate-key)(\/|$)/.test(rest)) throw new MockHttpError(404, 'Not found');
+    if (/^(kiosks|members|triggers|goals|integrations|slack|rotate-key)(\/|$)/.test(rest)) throw new MockHttpError(404, 'Not found');
     return handleApi('GET', new URL(`/api/projects/${pid}/${rest}${url.search}`, url.origin), undefined, 'demo@wgo.dev');
   }
   throw new MockHttpError(401, 'This kiosk link was removed or replaced. Get the current one from the dashboard.');

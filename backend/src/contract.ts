@@ -250,6 +250,42 @@ export interface SavedView extends SavedViewInput {
   createdAt: string;
 }
 
+// ---------- conversion goals ----------
+// A goal turns any kind of event into a conversion: a pageview of /thank-you, a click on the signup button, a custom
+// `checkout_completed` event. It's described with filters (events scope, same fields and semantics as above).
+// A session converts when it has at least one matching event; conversion rate = converting sessions / sessions.
+// GET    /api/projects/{pid}/goals                 -> Goal[]   (oldest first)
+// POST   /api/projects/{pid}/goals   GoalInput     -> Goal
+// PATCH  /api/projects/{pid}/goals/{id}  Partial<GoalInput> -> Goal
+// DELETE /api/projects/{pid}/goals/{id}            -> { ok: true }
+export interface GoalInput {
+  name: string; // 1-120 characters
+  filters: Filter[]; // events scope, at least one
+}
+export interface Goal extends GoalInput {
+  id: string;
+  createdBy: string;
+  createdAt: string;
+}
+
+// GET /api/projects/{pid}/conversions?from&to[&series=0]   (also /kiosk/v1/conversions)
+//   Every goal of the project, counted over raw events (so only within the project's retention). The page filters
+//   (`filters`, `bots`) narrow both the goal's events and the sessions it's compared with.
+export interface GoalConversions {
+  id: string;
+  name: string;
+  filters: Filter[];
+  conversions: number; // matching events
+  sessions: number; // sessions with at least one matching event
+  users: number; // distinct anon ids among them
+  series: number[]; // matching events in 24 equal buckets across [from,to] (empty with series=0)
+}
+export interface ConversionsResponse {
+  sessions: number; // all sessions in range: the denominator of the conversion rate
+  users: number;
+  goals: GoalConversions[];
+}
+
 // GET /api/projects/{pid}/stats?from&to[&compare=0]
 //   Ranges of 3+ days (or reaching past the project's retention) without filters are served from hourly
 //   rollups: buckets of 1h or more, sessions/users are HyperLogLog estimates (about ±2%).
