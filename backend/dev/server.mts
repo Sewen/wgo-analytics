@@ -1,5 +1,6 @@
 /**
- * Local dev server: runs the real Lambda handlers over HTTP against plain PostgreSQL.
+ * Local dev server: runs the real Lambda handlers over HTTP against plain PostgreSQL (projects, settings,
+ * rollups) and a local directory of Parquet files (raw data, STORE_URL; default backend/.wgo-store).
  * No Cognito locally — every /api request acts as DEV_EMAIL. Live WebSocket fan-out is disabled.
  *
  *   docker run -d --rm --name wgo-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:16-alpine
@@ -14,6 +15,7 @@ import { extname, join, normalize, resolve } from 'node:path';
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
 
 process.env.CONNECTIONS_TABLE ??= 'local';
+process.env.STORE_URL ??= resolve(import.meta.dirname, '../.wgo-store');
 const PORT = Number(process.env.PORT ?? 8787);
 const DEV_EMAIL = process.env.DEV_EMAIL ?? 'dev@localhost.test';
 const ROOT = resolve(import.meta.dirname, '../..');

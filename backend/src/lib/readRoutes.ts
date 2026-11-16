@@ -21,7 +21,7 @@ export const READ_ROUTES: Record<string, ProjectRoute> = {
   fields: (pid, q, rest) => (rest[0] === 'values' ? A.fieldValues(pid, q) : A.fields(pid, q)),
   events: (pid, q) => A.events(pid, q),
   conversions: (pid, q) => G.conversions(pid, q),
-  traces: (pid, q, rest) => (rest[0] ? A.trace(pid, rest[0]) : A.traces(pid, q)),
+  traces: (pid, q, rest) => (rest[0] ? A.trace(pid, rest[0], q) : A.traces(pid, q)),
   services: (pid, q) => A.services(pid, q),
   logs: (pid, q) => A.logs(pid, q),
   metrics: (pid, q, rest) => (rest[0] === 'series' ? A.metricSeries(pid, q) : A.metrics(pid, q)),

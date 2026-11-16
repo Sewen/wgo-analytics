@@ -1,9 +1,9 @@
 import type { DriverDim, DriverRow, Filter, FunnelStepResult, GoalFunnel, GoalStep, JourneyRow } from '../contract';
 import { parseRange } from './analytics';
-import { query } from './db';
 import { filterSql, filtersFrom } from './filters';
 import { findGoal, goalSteps } from './goals';
 import { HttpError } from './http';
+import { rawQuery } from './store/duck';
 
 /**
  * How sessions reach a goal: the ordered funnel through the goal's steps, the segments (entry page, pages viewed,
@@ -132,7 +132,7 @@ async function orderedSteps(pid: string, r: { from: Date; to: Date }, p: Record<
                      WHERE b.session_id IS NULL GROUP BY 3 ORDER BY 4 DESC LIMIT ${EXITS})`);
     }
   }
-  const rows = await query<{ kind: 'step' | 'exit'; i: number; key: string | null; n: number; med: number | null }>(
+  const rows = await rawQuery<{ kind: 'step' | 'exit'; i: number; key: string | null; n: number; med: number | null }>(pid, r,
     `WITH ${ctes.join(',\n')}\n${selects.join('\nUNION ALL ')}`,
     params,
   );
@@ -159,7 +159,7 @@ async function sessionSegments(pid: string, r: { from: Date; to: Date }, p: Reco
   const before = (dim: DriverDim, key: string, at: string, where: string) =>
     `(SELECT '${dim}', ${key}, count(DISTINCT session_id)::int, count(DISTINCT CASE WHEN goal_at IS NOT NULL THEN session_id END)::int, NULL, ${at}
         FROM e WHERE ${where} AND (goal_at IS NULL OR ts < goal_at) GROUP BY 2, 6 ORDER BY 3 DESC LIMIT 100)`;
-  return query<SessionRow>(
+  return rawQuery<SessionRow>(pid, r,
     `WITH ev AS (
        SELECT session_id, ts, type, path, device, browser, country,
               -- external referrer host of a pageview ('' = direct; SPA navigations carry the app's own URL)
@@ -175,10 +175,10 @@ async function sessionSegments(pid: string, r: { from: Date; to: Date }, p: Reco
      e AS (SELECT ev.*, g.goal_at FROM ev LEFT JOIN g ON g.session_id = ev.session_id),
      s AS (
        SELECT session_id, max(goal_at) AS goal_at,
-              (array_remove(array_agg(CASE WHEN type = 'pageview' THEN path END ORDER BY ts), NULL))[1] AS entry,
-              (array_remove(array_agg(ref ORDER BY ts), NULL))[1] AS source,
+              (array_agg(path ORDER BY ts) FILTER (WHERE type = 'pageview' AND path IS NOT NULL))[1] AS entry,
+              (array_agg(ref ORDER BY ts) FILTER (WHERE ref IS NOT NULL))[1] AS source,
               max(device) AS device, max(browser) AS browser, max(country) AS country,
-              (array_remove(array_agg(CASE WHEN type = 'pageview' AND (goal_at IS NULL OR ts <= goal_at) THEN path END ORDER BY ts), NULL))[1:8] AS pages
+              (array_agg(path ORDER BY ts) FILTER (WHERE type = 'pageview' AND path IS NOT NULL AND (goal_at IS NULL OR ts <= goal_at)))[1:8] AS pages
          FROM e GROUP BY session_id)
      SELECT 'total' AS dim, NULL::text AS key, count(*)::int AS sessions, count(goal_at)::int AS converted, NULL::text[] AS pages, NULL::text AS at FROM s
      UNION ALL ${seg('entry', `COALESCE(entry, '(no pageview)')`)}

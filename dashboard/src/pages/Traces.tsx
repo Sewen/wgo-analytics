@@ -32,7 +32,8 @@ function TraceList() {
   const traces = useTraces(project.id, range, { service: service || undefined, minDurationMs: minDd ? Number(minDd) : undefined, errorsOnly, q: q || undefined });
   const names = useMemo(() => (services.data ?? []).map((s) => s.service), [services.data]);
   const maxD = Math.max(1, ...(traces.data ?? []).map((t) => t.durationMs));
-  const open = (t: TraceSummary) => navigate(pageHref(project.id, `traces/${t.traceId}`, route.params));
+  // `at` tells the API which day's spans to look in
+  const open = (t: TraceSummary) => navigate(pageHref(project.id, `traces/${t.traceId}`, route.params, { at: t.start }));
   const dots = useMemo(() => (traces.data ?? []).map((t) => ({ id: t.traceId, t: Date.parse(t.start), v: t.durationMs, bad: t.errorCount > 0, label: `${t.rootName}` })), [traces.data]);
   if (traces.isError) return <ErrorState error={traces.error} retry={() => traces.refetch()} />;
   return (
@@ -160,7 +161,7 @@ function Waterfall({ spans }: { spans: Span[] }) {
 
 function TraceDetail({ traceId }: { traceId: string }) {
   const { project } = useProject(); const route = useRoute();
-  const t = useTrace(project.id, traceId);
+  const t = useTrace(project.id, traceId, route.params.get('at'));
   const root = t.data?.spans.find((s) => !s.parentSpanId) ?? t.data?.spans[0];
   return (
     <div className="space-y-4">

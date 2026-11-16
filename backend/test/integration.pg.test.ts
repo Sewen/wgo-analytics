@@ -100,7 +100,8 @@ d('integration (PostgreSQL)', async () => {
     // the same batch again, gzipped (as the SDK sends larger payloads): a retry must not duplicate rows
     const gz = (await ingest(httpEvent('POST', '/ingest', { body: gzipSync(JSON.stringify(batch)) }))) as Res;
     expect(gz.statusCode).toBe(202);
-    const [{ n }] = await query<{ n: number }>('SELECT count(*)::int AS n FROM events WHERE project_id = $1', [pid]);
+    const { rawQuery } = await import('../src/lib/store/duck');
+    const [{ n }] = await rawQuery<{ n: number }>(pid, { from: new Date(0), to: new Date(now + 86400e3) }, 'SELECT count(*)::int AS n FROM events WHERE project_id = $1', [pid]);
     expect(n).toBe(events.length);
 
     // a second visitor, located by CloudFront in Gothenburg

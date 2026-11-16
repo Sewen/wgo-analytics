@@ -18,9 +18,10 @@ d('conversion goals (PostgreSQL)', async () => {
   url.searchParams.set('options', `-c search_path=${SCHEMA}`);
   process.env.DATABASE_URL = url.toString();
 
-  const { query, insertRows, closeDb } = await import('../src/lib/db');
+  const { query, closeDb } = await import('../src/lib/db');
+  const { writeRows } = await import('../src/lib/store/write');
   const { SCHEMA_STATEMENTS } = await import('../src/lib/schema');
-  const { EVENT_COLUMNS, eventRowValues, normalizeBatch } = await import('../src/lib/events');
+  const { normalizeBatch } = await import('../src/lib/events');
   const G = await import('../src/lib/goals');
 
   const pid = randomUUID();
@@ -69,7 +70,7 @@ d('conversion goals (PostgreSQL)', async () => {
       // another project's conversions never leak in
       ...normalizeBatch(other, batch('anon-x', chrome, [ev('sess-x', 'custom', '/checkout', { name: 'checkout' })]) as never, now),
     ];
-    await insertRows('events', EVENT_COLUMNS, rows.map(eventRowValues), { props: '::jsonb' });
+    await writeRows('events', rows);
   });
 
   afterAll(async () => {

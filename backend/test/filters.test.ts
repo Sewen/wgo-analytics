@@ -21,8 +21,8 @@ describe('filter compiler', () => {
 
   it('maps every operator', () => {
     const ops = {
-      eq: 'path = $4', neq: 'path IS DISTINCT FROM $4', contains: 'path ILIKE $4', not_contains: '(path IS NULL OR path NOT ILIKE $4)',
-      starts_with: 'path ILIKE $4', ends_with: 'path ILIKE $4', set: "NULLIF(path, '') IS NOT NULL", not_set: "NULLIF(path, '') IS NULL",
+      eq: 'path = $4', neq: 'path IS DISTINCT FROM $4', contains: "path ILIKE $4 ESCAPE '\\'", not_contains: "(path IS NULL OR path NOT ILIKE $4 ESCAPE '\\')",
+      starts_with: "path ILIKE $4 ESCAPE '\\'", ends_with: "path ILIKE $4 ESCAPE '\\'", set: "NULLIF(path, '') IS NOT NULL", not_set: "NULLIF(path, '') IS NULL",
     };
     for (const [op, sql] of Object.entries(ops)) expect(compile([{ field: 'path', op, value: 'x' }]).sql).toBe(` AND (${sql})`);
     expect(compile([{ field: 'path', op: 'contains', value: '50%_off' }]).params).toEqual(['%50\\%\\_off%']);
@@ -32,18 +32,20 @@ describe('filter compiler', () => {
 
   it('compares numeric columns as numbers and numeric-looking values numerically', () => {
     expect(compile([{ field: 'httpStatus', op: 'gte', value: '500' }])).toEqual({ sql: ' AND (http_status >= $4)', params: [500] });
-    expect(compile([{ field: 'httpStatus', op: 'starts_with', value: '5' }]).sql).toBe(' AND ((http_status)::text ILIKE $4)');
+    expect(compile([{ field: 'httpStatus', op: 'starts_with', value: '5' }]).sql).toBe(" AND ((http_status)::text ILIKE $4 ESCAPE '\\')");
     const json = compile([{ field: 'props.props.value', op: 'gt', value: '10' }]);
-    expect(json.sql).toContain('::numeric END) > $5');
-    expect(json.params).toEqual([['props', 'value'], 10]);
+    expect(json.sql).toContain('::double END) > $5');
+    expect(json.params).toEqual(['$."props"."value"', 10]);
     // non-numeric value: text ordering (ISO dates)
     expect(compile([{ field: 'props.signupDate', op: 'lt', value: '2026-01-01' }]).sql).toContain('< $5');
   });
 
   it('binds JSON paths as parameters: nested for event props, a single key for OTel attributes', () => {
-    expect(compile([{ field: 'props.props.plan', op: 'eq', value: 'pro' }]).params).toEqual([['props', 'plan'], 'pro']);
-    expect(compile([{ field: 'attributes.http.route', op: 'eq', value: '/x' }], 'logs').params).toEqual([['http.route'], '/x']);
-    expect(compile([{ field: 'resource.service.version', op: 'set' }], 'spans').params).toEqual([['service.version']]);
+    expect(compile([{ field: 'props.props.plan', op: 'eq', value: 'pro' }]).params).toEqual(['$."props"."plan"', 'pro']);
+    expect(compile([{ field: 'attributes.http.route', op: 'eq', value: '/x' }], 'logs').params).toEqual(['$."http.route"', '/x']);
+    expect(compile([{ field: 'resource.service.version', op: 'set' }], 'spans').params).toEqual(['$."service.version"']);
+    // quotes and backslashes inside a key are escaped within the quoted path segment
+    expect(compile([{ field: 'props.a"b\\c', op: 'set' }]).params).toEqual(['$."a\\"b\\\\c"']);
   });
 
   it('never interpolates user input into SQL', () => {

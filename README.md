@@ -11,7 +11,8 @@ metrics land in the same project. Everything shows up in one dashboard that upda
 
 - **Your data stays in your AWS account.** Nothing is sent to a third party, IP addresses are never stored,
   and no cookies are set ([details](#cookies-and-privacy)).
-- **Serverless, scales to zero.** Lambda, API Gateway, Aurora DSQL, DynamoDB, Cognito, S3 and CloudFront. There
+- **Serverless, scales to zero.** Lambda, API Gateway, S3 (Parquet, queried with DuckDB), Aurora DSQL, DynamoDB,
+  Cognito and CloudFront. There
   are no servers or databases to patch, and an idle install costs close to nothing.
 - **One deploy script.** It creates the stack, builds the dashboard and SDK, uploads them and prints your URLs.
 - **MIT licensed.**
@@ -213,7 +214,8 @@ change them later by re-running the deploy.
 | `ALLOW_SELF_SIGNUP` | `true` | `false` = only users you create in Cognito can sign in |
 | `DELETION_PROTECTION` | `false` | DSQL cluster deletion protection; turn on for production |
 | `MCP_ENABLED` | `true` | The [MCP server](#ai-assistants-mcp) at `/mcp`, with Cognito MCP auth (open client registration) |
-| `MAX_RETENTION_DAYS` | `90` | Longest raw-data retention a project owner can choose (the default is 14 days); see [Cost awareness](#cost-awareness) |
+| `MAX_RETENTION_DAYS` | `400` | Longest raw-data retention a project owner can choose (the default is 90 days); see [Cost awareness](#cost-awareness) |
+| `WRITE_BUFFER_SECONDS` | `30` | How long incoming events, logs, spans and metrics are collected before they are written as one Parquet file (1–300). Shorter means fresher charts, longer means fewer files. The Live page and triggers don't wait for it |
 | `CLUSTER_METRICS_PROJECT_ID` | none | Project that receives hourly Aurora DSQL storage and DPU numbers, as metrics and as a `wgo.cluster` event you can create triggers on |
 | `SKIP_ANDROID` | `false` | `true` = don't rebuild the Android app; the last uploaded one stays live |
 | `SLACK_CLIENT_ID` / `SLACK_CLIENT_SECRET` | none | One Slack app for "Add to Slack" in every project's [triggers](#filters-and-triggers); otherwise each project sets it up from its Triggers page |
@@ -254,24 +256,27 @@ To ship only dashboard or SDK changes to an existing stack (no SAM, about 30 s):
 ### Cost awareness
 
 Everything is billed per request and per GB, so an idle install costs close to nothing and the bill follows
-your traffic. You pay for Aurora DSQL (compute in DPUs, plus storage per GB-month), Lambda, API Gateway,
-CloudFront and Cognito. Cognito runs on the Essentials tier, which MCP sign-in requires; check
-[Cognito pricing](https://aws.amazon.com/cognito/pricing/) for its monthly active user allowance. Prices
-differ by region; see [Aurora DSQL pricing](https://aws.amazon.com/rds/aurora/dsql/pricing/).
+your traffic. Raw telemetry is stored as compressed Parquet files in S3 and queried by DuckDB inside the API
+Lambda; Aurora DSQL only holds projects, settings, error stacks and the hourly aggregates. You pay for S3
+(storage and requests), Lambda, SQS, API Gateway, CloudFront, Cognito and a little DSQL. Cognito runs on the
+Essentials tier, which MCP sign-in requires; check [Cognito pricing](https://aws.amazon.com/cognito/pricing/)
+for its monthly active user allowance.
 
 As traffic grows, cost comes from four places:
 
 1. **Stored data.** Raw events, logs, spans and metric points are kept for each project's **retention**
-   (Settings → Data retention, 14 days by default). Older rows are deleted once a day. What you store is
-   roughly your ingest rate times retention, so doubling retention roughly doubles the storage bill.
+   (Settings → Data retention, 90 days by default), then deleted a whole day at a time. They are stored as
+   ZSTD-compressed Parquet, usually a tenth of the raw size or less, at S3 Standard prices.
    `MAX_RETENTION_DAYS` caps what project owners can choose, which matters when anyone can sign up and create
-   projects on your stack. Deleting rows uses some write capacity too, in line with what you ingest.
-2. **Ingest.** Every event, log record, span and metric point is a DSQL write, so write cost grows linearly
-   with volume. OpenTelemetry logs and spans are usually the largest share: filter or sample them in your
-   collector before they reach WGO. For high-traffic sites, the browser SDK's `sampleRate` keeps a fraction
-   of sessions. Error stack traces are stored once per error group, not on every error event.
-3. **Dashboard queries.** A query reads every row in the selected range, so its cost grows with traffic times
-   the range length.
+   projects on your stack.
+2. **Ingest.** Events and OTLP requests are queued in SQS and written as one Parquet file per project and day
+   every `WRITE_BUFFER_SECONDS`, so the cost is a few Lambda invocations and S3 PUTs per minute rather than
+   one write per row. The maintenance job merges each day's small files. OpenTelemetry logs and spans are
+   usually the largest share of the data: filter or sample them in your collector before they reach WGO. For
+   high-traffic sites, the browser SDK's `sampleRate` keeps a fraction of sessions. Error stack traces are
+   stored once per error group, not on every error event.
+3. **Dashboard queries.** A query reads the Parquet files of the days in the selected range (only the columns
+   it needs), so its cost and time grow with traffic times the range length.
    - The Overview's KPIs, events chart, top pages and breakdowns read **hourly aggregates** for ranges of 3
      days or more (and for anything older than the retention), as long as no filters are set. Their cost
      depends on the number of hours, not on traffic. Sessions and users there are estimates (about ±2%).
@@ -281,10 +286,11 @@ As traffic grows, cost comes from four places:
      every 5 min for 7 days, every 15 min for 30 days. The comparison numbers (the ▲/▼ deltas) refresh on a
      slower clock. A tab left open on a long, filtered range with auto-refresh on is the most expensive
      way to use WGO.
-4. **Background work.** A maintenance Lambda runs every 15 minutes. It builds the hourly aggregates, which
-   reads each hour of events a few times, deletes expired data once a day, and stops after 12 minutes,
-   continuing on its next run. On first deploy it builds aggregates for the data you already have, up to
-   92 days back.
+4. **Background work.** A maintenance Lambda runs every 15 minutes. It merges small Parquet files, builds the
+   hourly aggregates (reading each hour of events a few times), deletes expired days once a day, and stops
+   after 12 minutes, continuing on its next run. On first deploy it builds aggregates for the data you already
+   have, up to 92 days back. Upgrading from a version that kept raw data in DSQL, it first moves those rows
+   into Parquet, a chunk at a time, and then deletes them from DSQL.
 
 **Watch the bill.** Set `CLUSTER_METRICS_PROJECT_ID` to a project's id (from its Settings page). Every hour
 that project receives the cluster's storage size and DPU usage as the metrics `wgo.dsql.storage_bytes` and
@@ -420,12 +426,12 @@ Registered clients are not cleaned up automatically. List them with
  ┌──────── CloudFront (your domain) · dashboard, SDK, /ingest, /v1/* · adds IP geolocation ────────┐
  └────┬──────────────────────────┬─────────────────────────────────────────────────────────────────┘
       ▼                          ▼                                    GET/POST /api/*  (Cognito JWT)
-  Ingest λ ──fan-out──┐      API Gateway ─▶ SQS ─▶ OTLP λ              API λ
-      │               │                               │                  │
-      ▼               ▼                               ▼                  ▼
- ┌─────────── Aurora DSQL (events · spans · logs · metric_points · projects) ───────────┐
- └──────────────────────────────────────────────────────────────────────────────────────┘
-                      │
+  Ingest λ ──fan-out──┐      API Gateway ─▶ SQS ─▶ OTLP λ              API λ (+ DuckDB)
+      │               │                               │                  │        │
+      ▼ SQS ─▶ writer λ                               ▼                  │        ▼
+ ┌──── S3: Parquet (events · spans · logs · metric_points), per project and day ◀─┘  Aurora DSQL
+ └──────────────────────────────────────────────────────────────────────────────┘  (projects, settings,
+                      │                                                             rollups, error stacks)
      API Gateway WebSocket (live) ◀── matching events pushed to subscribed dashboards
                       ▼                (connections + watches in DynamoDB)
    Dashboard (React) ── accounts via Cognito (optional email-domain allowlist)
@@ -438,27 +444,37 @@ gzipped. When the page is hidden, everything is flushed with `sendBeacon`. Failu
 and while offline the SDK waits for `online`. Error storms are coalesced, and rage clicks are collapsed into
 one event.
 
-**Storage (Aurora DSQL).** Serverless, scales to zero, PostgreSQL-compatible, so you can query it directly
-with `psql` and IAM auth (the `DsqlEndpoint` stack output). Tables are keyed `(project_id, time, id)` for cheap
-per-project range scans. Primary-key dedupe makes SDK retries idempotent. Attributes and props are `jsonb`.
-DSQL constraints shape the code: one DDL per transaction, `CREATE INDEX ASYNC`, and 3,000 rows or fewer per
-transaction (inserts are chunked at 500). See [backend/src/lib/schema.ts](backend/src/lib/schema.ts).
+**Raw data (Parquet on S3, DuckDB).** Events, spans, logs and metric points live in the `DataBucket` stack
+output as `{table}/project_id={id}/dt={YYYY-MM-DD}/*.parquet`. Writers never append: each batch becomes a new
+file, and the maintenance job merges a day's small files into one sorted, ZSTD-compressed file, dropping
+duplicate rows (an SDK retry or SQS redelivery) on the way; until then readers drop them. The dashboard API,
+widget, kiosk and MCP functions run an in-process DuckDB (a Lambda layer with the `httpfs` extension) and read
+only the project's files for the days in range. Spans are sorted by trace, so opening a trace reads one row
+group per file. You can point DuckDB, Athena or Spark at the bucket yourself. See
+[backend/src/lib/store/](backend/src/lib/store/).
 
-**Rollups and retention.** A scheduled maintenance Lambda
+**Configuration (Aurora DSQL).** Serverless, scales to zero, PostgreSQL-compatible, so you can query it directly
+with `psql` and IAM auth (the `DsqlEndpoint` stack output). It holds projects, members, goals, triggers,
+kiosks, saved views, error stacks and the hourly rollups. DSQL constraints shape the code: one DDL per
+transaction, `CREATE INDEX ASYNC`, and 3,000 rows or fewer per transaction. See
+[backend/src/lib/schema.ts](backend/src/lib/schema.ts).
+
+**Rollups, compaction and retention.** A scheduled maintenance Lambda
 ([backend/src/handlers/maintenance.ts](backend/src/handlers/maintenance.ts)) runs every 15 minutes:
+- **Compaction**: merges the small files of the last three days into files of up to ~48 MB per project and day.
 - **Hourly rollups**: for each complete hour, it stores event counts by type, pageviews per path, sessions per
   browser, OS, device, country, city and referrer (counted in the hour they started), and HyperLogLog sketches
   of the hour's session and user ids. Long ranges merge these instead of scanning raw events. A watermark
   marks the last rolled hour; anything after it is read raw, so results are always complete up to now.
   Rollups are kept 400 days.
-- **Retention**: once a day, it deletes raw rows older than each project's retention in batches that stay
-  inside DSQL's transaction limits. It never deletes events that haven't been rolled up yet.
+- **Retention**: once a day, it deletes each project's files of days older than its retention. It never
+  deletes events that haven't been rolled up yet.
 - **Cluster metrics**: once an hour, if `CLUSTER_METRICS_PROJECT_ID` is set (see
   [Cost awareness](#cost-awareness)).
 
 **Live watches.** The dashboard opens a WebSocket (Cognito ID token + project id), then subscribes with a
 list of watches (`{type:'click', name:'signup-cta'}`, selector/text/path substrings…) or the firehose. The
-ingest Lambda writes to DSQL and, in parallel, matches the batch against the project's subscriptions and
+ingest Lambda queues the batch for storage and, in parallel, matches it against the project's subscriptions and
 pushes hits straight to those connections. Click-to-screen latency is the SDK flush delay plus about 100 ms.
 
 **Visitor location and map.** `/ingest` and `/v1/*` go through the same CloudFront distribution as the
@@ -496,7 +512,7 @@ See [android/README.md](android/README.md).
 ## Local development
 
 ```bash
-# Postgres stands in for DSQL locally
+# Postgres stands in for DSQL locally; raw data goes to Parquet files in backend/.wgo-store (STORE_URL)
 docker run -d --rm --name wgo-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:16-alpine
 
 cd sdk && npm i && npm run build && cd ..
@@ -521,7 +537,7 @@ Tests:
 ```bash
 cd sdk && npm test                       # buffering, capture, selectors, transport (happy-dom)
 cd backend && npm test                   # normalization, matching, allowlist, OTLP protobuf≡JSON with real OTel serializers
-cd backend && npm run test:integration   # full API + ingest + OTLP against Postgres (needs the container above)
+cd backend && npm run test:integration   # full API + ingest + OTLP against Postgres + Parquet in a temp dir (needs the container above)
 ```
 
 ## Known limits
@@ -533,6 +549,14 @@ cd backend && npm run test:integration   # full API + ingest + OTLP against Post
 - Only the Overview's KPIs, events chart, top pages and breakdowns have rollups. Filtered views and the other
   pages aggregate raw rows, so they only reach back as far as the project's retention, and their cost
   grows with traffic.
+- Charts and lists trail live traffic by up to `WRITE_BUFFER_SECONDS` (30 s by default) plus a few seconds of
+  file-list caching. The Live page and triggers run at ingest and aren't delayed.
+- Raw data is append-only: there is no way to edit or delete single events (for example one user's) short of
+  rewriting that day's files. Deleting whole days, through retention, is cheap.
+- Duplicate rows are dropped within files not merged yet and within each merge. A retry that arrives after its
+  original was merged (rare: retries come within seconds) is counted twice.
+- Opening a trace without a time hint (a pasted trace id) searches the last two days first, then every day still
+  stored, which is slower.
 - Events that arrive more than about an hour after they happened (offline SDK batches) are missing from the
   rollups; raw-backed views still show them.
 - In rollup-backed views, top pages add up hourly distinct sessions, so a session spanning several hours

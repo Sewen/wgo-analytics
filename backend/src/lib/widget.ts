@@ -1,10 +1,10 @@
 import type { WidgetCatalog, WidgetRange, WidgetStat, WidgetStatOption, WidgetSummary } from '../contract';
 import { breakdown, pages } from './analytics';
-import { query } from './db';
 import { Hll } from './hll';
 import { HttpError } from './http';
 import { projectRetention } from './retention';
 import { hourlySketches, hourlyTypes, planRange, type Plan } from './rollups';
+import { rawQuery } from './store/duck';
 
 /**
  * Data for the Android home-screen widget: a catalog of stats the user can pick, and a summary that computes
@@ -79,20 +79,21 @@ function safeDecode(s: string): string {
 
 export async function catalog(pid: string): Promise<WidgetCatalog> {
   const since = new Date(Date.now() - 7 * 86400e3);
+  const recent = { from: since, to: new Date(Date.now() + 60_000) };
   const [tracks, events, metrics] = await Promise.all([
-    query<{ name: string; n: number }>(
+    rawQuery<{ name: string; n: number }>(pid, recent,
       `SELECT track_name AS name, count(*)::int AS n FROM events
         WHERE project_id = $1 AND type = 'click' AND ts >= $2 AND track_name IS NOT NULL
         GROUP BY 1 ORDER BY n DESC LIMIT 30`,
       [pid, since],
     ),
-    query<{ name: string; n: number }>(
+    rawQuery<{ name: string; n: number }>(pid, recent,
       `SELECT name, count(*)::int AS n FROM events
         WHERE project_id = $1 AND type = 'custom' AND ts >= $2 AND name IS NOT NULL
         GROUP BY 1 ORDER BY n DESC LIMIT 30`,
       [pid, since],
     ),
-    query<{ name: string; unit: string | null; description: string | null }>(
+    rawQuery<{ name: string; unit: string | null; description: string | null }>(pid, recent,
       `SELECT name, max(unit) AS unit, max(description) AS description FROM metric_points
         WHERE project_id = $1 AND ts >= $2 GROUP BY 1 ORDER BY 1 LIMIT 60`,
       [pid, since],
@@ -117,7 +118,7 @@ interface Win {
 }
 
 /** Bucket index over [prevFrom, to): 0..23 = previous window, 24..47 = current window. */
-const B = (col: string) => `floor(extract(epoch from (${col} - $2::timestamptz)) / $4::numeric)::int`;
+const B = (col: string) => `floor(extract(epoch from (${col} - $2::TIMESTAMP)) / $4::double)::int`;
 
 /** Split 48 bucket rows into previous total, current total and the current window's series. */
 function split(rows: Array<{ b: number }>, get: (r: never) => number | null) {
@@ -149,6 +150,8 @@ type Part = Pick<WidgetStat, 'value' | 'previous' | 'series'> & PartExtra;
 type PartExtra = { text?: string | null; rating?: WidgetStat['rating']; unit?: WidgetStat['unit']; suffix?: string | null; label?: string };
 
 type Loader = (pid: string, w: Win, keys: string[]) => Promise<Record<string, Part>>;
+/** Both windows (previous and current) of a widget request. */
+const span = (w: Win) => ({ from: w.prevFrom, to: w.to });
 
 /** Long windows (or ones reaching past raw retention) come from hourly rollups, like the dashboard's. */
 async function widgetPlan(pid: string, w: Win): Promise<Plan | null> {
@@ -196,7 +199,7 @@ const eventCounts: Loader = async (pid, w, keys) => {
   const plan = await widgetPlan(pid, w);
   if (plan) return rolledEventCounts(pid, w, plan);
   const [rows, [d]] = await Promise.all([
-    query<{ b: number; pageview: number; click: number; error: number; http_error: number; sessions: number; users: number }>(
+    rawQuery<{ b: number; pageview: number; click: number; error: number; http_error: number; sessions: number; users: number }>(pid, span(w),
       `SELECT ${B('ts')} AS b,
               sum(CASE WHEN type = 'pageview' THEN 1 ELSE 0 END)::int AS pageview,
               sum(CASE WHEN type = 'click' THEN 1 ELSE 0 END)::int AS click,
@@ -208,7 +211,7 @@ const eventCounts: Loader = async (pid, w, keys) => {
     ),
     // distinct counts don't add up across buckets: count each window once
     keys.some((k) => k === 'sessions' || k === 'users')
-      ? query<{ s_cur: number; s_prev: number; u_cur: number; u_prev: number }>(
+      ? rawQuery<{ s_cur: number; s_prev: number; u_cur: number; u_prev: number }>(pid, span(w),
           `SELECT count(DISTINCT CASE WHEN ts >= $4 THEN session_id END)::int AS s_cur,
                   count(DISTINCT CASE WHEN ts < $4 THEN session_id END)::int AS s_prev,
                   count(DISTINCT CASE WHEN ts >= $4 THEN anon_id END)::int AS u_cur,
@@ -234,8 +237,8 @@ const visitorsNow: Loader = async (pid) => {
   const window = ACTIVE_MS / 60_000;
   const now = Date.now();
   const start = new Date(now - (NOW_MINUTES + window) * 60_000);
-  const rows = await query<{ session_id: string; m: number }>(
-    `SELECT DISTINCT session_id, floor(extract(epoch from (ts - $2::timestamptz)) / 60)::int AS m
+  const rows = await rawQuery<{ session_id: string; m: number }>(pid, { from: start, to: new Date(now + 60_000) },
+    `SELECT DISTINCT session_id, floor(extract(epoch from (ts - $2::TIMESTAMP)) / 60)::int AS m
        FROM events WHERE project_id = $1 AND ts >= $2 AND session_id IS NOT NULL AND bot IS NULL`,
     [pid, start],
   );
@@ -264,12 +267,12 @@ const vitals: Loader = async (pid, w, keys) => {
   // keys come from the fixed VITALS table, so interpolating them is safe
   const pct = ks.map((k) => `percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'${k}')::float8) AS ${k}`).join(', ');
   const [rows, windows] = await Promise.all([
-    query<{ b: number } & Record<string, number | null>>(
+    rawQuery<{ b: number } & Record<string, number | null>>(pid, span(w),
       `SELECT ${B('ts')} AS b, ${pct} FROM events
         WHERE project_id = $1 AND type = 'vitals' AND ts >= $2 AND ts < $3 AND bot IS NULL GROUP BY 1`,
       [pid, w.prevFrom, w.to, w.step],
     ),
-    query<{ cur: boolean } & Record<string, number | null>>(
+    rawQuery<{ cur: boolean } & Record<string, number | null>>(pid, span(w),
       `SELECT (ts >= $4) AS cur, ${pct} FROM events
         WHERE project_id = $1 AND type = 'vitals' AND ts >= $2 AND ts < $3 AND bot IS NULL GROUP BY 1`,
       [pid, w.prevFrom, w.to, w.from],
@@ -290,11 +293,11 @@ const spans: Loader = async (pid, w) => {
                 sum(CASE WHEN status_code = 2 THEN 1 ELSE 0 END)::int AS errors,
                 percentile_cont(0.95) WITHIN GROUP (ORDER BY CASE WHEN parent_span_id IS NULL THEN duration_ms END) AS p95`;
   const [rows, windows] = await Promise.all([
-    query<{ b: number; traces: number; errors: number; p95: number | null }>(
+    rawQuery<{ b: number; traces: number; errors: number; p95: number | null }>(pid, span(w),
       `SELECT ${B('start_time')} AS b, ${cols} FROM spans WHERE project_id = $1 AND start_time >= $2 AND start_time < $3 GROUP BY 1`,
       [pid, w.prevFrom, w.to, w.step],
     ),
-    query<{ cur: boolean; p95: number | null }>(
+    rawQuery<{ cur: boolean; p95: number | null }>(pid, span(w),
       `SELECT (start_time >= $4) AS cur, ${cols} FROM spans WHERE project_id = $1 AND start_time >= $2 AND start_time < $3 GROUP BY 1`,
       [pid, w.prevFrom, w.to, w.from],
     ),
@@ -313,7 +316,7 @@ const spans: Loader = async (pid, w) => {
 };
 
 const logErrors: Loader = async (pid, w) => {
-  const rows = await query<{ b: number; n: number }>(
+  const rows = await rawQuery<{ b: number; n: number }>(pid, span(w),
     `SELECT ${B('ts')} AS b, count(*)::int AS n FROM logs
       WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND severity_number >= 17 GROUP BY 1`,
     [pid, w.prevFrom, w.to, w.step],
@@ -336,7 +339,7 @@ const topCountry: Loader = async (pid, w) => {
 async function dynamicStat(pid: string, w: Win, key: string): Promise<Part> {
   const [, kind, name] = key.match(DYNAMIC)!;
   if (kind === 'metric') {
-    const rows = await query<{ b: number; v: number | null; unit: string | null }>(
+    const rows = await rawQuery<{ b: number; v: number | null; unit: string | null }>(pid, span(w),
       `SELECT ${B('ts')} AS b, avg(value)::float8 AS v, max(unit) AS unit FROM metric_points
         WHERE project_id = $1 AND name = $5 AND ts >= $2 AND ts < $3 GROUP BY 1`,
       [pid, w.prevFrom, w.to, w.step, name],
@@ -358,7 +361,7 @@ async function dynamicStat(pid: string, w: Win, key: string): Promise<Part> {
     };
   }
   const where = kind === 'track' ? `type = 'click' AND track_name = $5` : `type = 'custom' AND name = $5`;
-  const rows = await query<{ b: number; n: number }>(
+  const rows = await rawQuery<{ b: number; n: number }>(pid, span(w),
     `SELECT ${B('ts')} AS b, count(*)::int AS n FROM events
       WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NULL AND ${where} GROUP BY 1`,
     [pid, w.prevFrom, w.to, w.step, name],

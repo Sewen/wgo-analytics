@@ -150,7 +150,7 @@ response body is empty.
 
 ## Your data stays in your AWS account
 
-WGO is open source and runs on Lambda, Aurora DSQL, DynamoDB and CloudFront in the account it's deployed to.
+WGO is open source and runs on Lambda, S3, Aurora DSQL, DynamoDB and CloudFront in the account it's deployed to.
 It scales to zero when nobody is using it.
 
 ```mermaid
@@ -158,7 +158,7 @@ flowchart LR
   B["🌐 Your web app<br/>WGO SDK"] --> CF["CloudFront<br/>your domain"]
   S["⚙️ Your services<br/>OpenTelemetry"] --> CF
   CF --> L["Lambda"]
-  L --> D[("Aurora DSQL")]
+  L --> D[("S3 (Parquet)<br/>+ Aurora DSQL")]
   L -- live events --> W["WebSocket"]
   W --> UI["📊 Dashboard"]
   D --> UI

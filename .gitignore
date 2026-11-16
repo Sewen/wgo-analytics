@@ -8,3 +8,4 @@ samconfig.toml
 .env.*
 deploy.env
 slack-app-manifest.json
+.wgo-store/

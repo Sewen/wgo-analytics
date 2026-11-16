@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
-Description: WGO (What's going on?) — product analytics + OpenTelemetry backend (Aurora DSQL, API Gateway, Lambda, Cognito)
+Description: WGO (What's going on?) — product analytics + OpenTelemetry backend (Parquet on S3 + DuckDB, Aurora DSQL, API Gateway, Lambda, Cognito)
 
 Parameters:
   DeletionProtection:
@@ -49,10 +49,16 @@ Parameters:
     Description: Serve the MCP server at /mcp. Turns on Cognito MCP auth (open dynamic client registration) so MCP clients can register themselves; users still sign in with their WGO account.
   MaxRetentionDays:
     Type: Number
-    Default: 90
+    Default: 400
     MinValue: 1
     MaxValue: 3650
-    Description: Upper limit for the raw-data retention project owners can choose in Settings (default retention is 14 days). Raw data is what the Aurora DSQL storage bill grows with.
+    Description: Upper limit for the raw-data retention project owners can choose in Settings (default retention is 90 days). Raw data is stored as Parquet in the DataBucket.
+  WriteBufferSeconds:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    MaxValue: 300
+    Description: How long incoming events, logs, spans and metrics are collected before they are written as one Parquet file. Longer means fewer, larger files (cheaper reads), shorter means fresher charts. The Live page and triggers are not delayed by it.
   ClusterMetricsProjectId:
     Type: String
     Default: ''
@@ -101,6 +107,8 @@ Globals:
       Variables:
         DSQL_ENDPOINT: !Sub '${DsqlCluster.Identifier}.dsql.${AWS::Region}.on.aws'
         MAX_RETENTION_DAYS: !Ref MaxRetentionDays
+        STORE_URL: !Sub 's3://${DataBucket}'
+        DUCKDB_EXTENSION_DIRECTORY: /opt/duckdb_extensions
         CONNECTIONS_TABLE: !Ref ConnectionsTable
         ALLOWED_EMAIL_DOMAINS: !Ref AllowedEmailDomains
         NODE_OPTIONS: --enable-source-maps
@@ -114,6 +122,83 @@ Resources:
       Tags:
         - Key: Name
           Value: !Sub '${AWS::StackName}-analytics'
+
+  # Raw events, logs, spans and metric points as Parquet: {table}/project_id=…/dt=YYYY-MM-DD/*.parquet
+  # (backend/src/lib/store). Kept when the stack is deleted, like the data in it.
+  DataBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      LifecycleConfiguration:
+        Rules:
+          - Id: abort-incomplete-uploads
+            Status: Enabled
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
+
+  # DuckDB (bindings + httpfs) for the functions that query raw data; built by layers/duckdb/Makefile
+  DuckDbLayer:
+    Type: AWS::Serverless::LayerVersion
+    Properties:
+      ContentUri: layers/duckdb
+      CompatibleRuntimes: [nodejs22.x]
+      CompatibleArchitectures: [arm64]
+    Metadata:
+      BuildMethod: makefile
+      BuildArchitecture: arm64
+
+  # Browser events on their way to Parquet: the ingest function queues them, EventsWriterFunction writes
+  # everything that arrived within WriteBufferSeconds as one file per project and day.
+  EventsQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MaximumMessageSize: 262144
+      MessageRetentionPeriod: 345600 # 4 days
+      VisibilityTimeout: 600 # well above the writer's timeout plus the batching window
+      SqsManagedSseEnabled: true
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt EventsDeadLetterQueue.Arn
+        maxReceiveCount: 5
+
+  EventsDeadLetterQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      MaximumMessageSize: 262144
+      MessageRetentionPeriod: 1209600 # 14 days
+      SqsManagedSseEnabled: true
+
+  EventsWriterFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ./
+      Handler: store.eventsHandler
+      MemorySize: 1024
+      Timeout: 60
+      Policies:
+        - S3WritePolicy: { BucketName: !Ref DataBucket }
+      Events:
+        Queue:
+          Type: SQS
+          Properties:
+            Queue: !GetAtt EventsQueue.Arn
+            BatchSize: 10000
+            MaximumBatchingWindowInSeconds: !Ref WriteBufferSeconds
+    Metadata:
+      BuildMethod: esbuild
+      BuildProperties:
+        Minify: true
+        Target: es2022
+        Sourcemap: true
+        External: [pg-native, '@duckdb/node-api']
+        EntryPoints: [src/handlers/store.ts]
 
   ConnectionsTable:
     Type: AWS::DynamoDB::Table
@@ -304,7 +389,9 @@ Resources:
           # geo headers are only trusted when CloudFront vouches for them with this value
           EDGE_SECRET: !Select [2, !Split ['/', !Ref AWS::StackId]]
           TRIGGER_FUNCTION: !Ref TriggerFunction
+          EVENTS_QUEUE_URL: !Ref EventsQueue
       Policies:
+        - SQSSendMessagePolicy: { QueueName: !GetAtt EventsQueue.QueueName }
         - Statement:
             - Effect: Allow
               Action: dsql:DbConnectAdmin
@@ -326,7 +413,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/ingest.ts]
 
   OtlpFunction:
@@ -335,11 +422,12 @@ Resources:
       CodeUri: ./
       Handler: otlp.queueHandler
       MemorySize: 1024
-      Timeout: 30
+      Timeout: 60
       Environment:
         Variables:
           TRIGGER_FUNCTION: !Ref TriggerFunction
       Policies:
+        - S3WritePolicy: { BucketName: !Ref DataBucket }
         - Statement:
             - Effect: Allow
               Action: dsql:DbConnectAdmin
@@ -352,8 +440,8 @@ Resources:
           Type: SQS
           Properties:
             Queue: !GetAtt OtlpQueue.Arn
-            BatchSize: 100
-            MaximumBatchingWindowInSeconds: 1
+            BatchSize: 1000
+            MaximumBatchingWindowInSeconds: !Ref WriteBufferSeconds
             FunctionResponseTypes: [ReportBatchItemFailures]
     Metadata:
       BuildMethod: esbuild
@@ -361,7 +449,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/otlp.ts]
 
   # ---------------------------------------------------------------- OTLP intake (no Lambda in the request path)
@@ -374,7 +462,7 @@ Resources:
     Properties:
       MaximumMessageSize: 1048576 # ~750 KB of request body after base64
       MessageRetentionPeriod: 345600 # 4 days
-      VisibilityTimeout: 180 # 6x the consumer timeout
+      VisibilityTimeout: 660 # the consumer timeout plus the longest batching window, with room for retries
       SqsManagedSseEnabled: true
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt OtlpDeadLetterQueue.Arn
@@ -513,11 +601,14 @@ Resources:
     Properties:
       CodeUri: ./
       Handler: api.handler
+      MemorySize: 2048
+      Layers: [!Ref DuckDbLayer]
       Environment:
         Variables:
           SLACK_CLIENT_ID: !Ref SlackClientId
           SLACK_CLIENT_SECRET: !Ref SlackClientSecret
       Policies:
+        - S3ReadPolicy: { BucketName: !Ref DataBucket }
         - Statement:
             - Effect: Allow
               Action: dsql:DbConnectAdmin
@@ -542,7 +633,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/api.ts]
 
   # Trigger notifications: invoked asynchronously by ingest (Lambda retries failed deliveries twice)
@@ -567,7 +658,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/trigger.ts]
 
   # "Add to Slack" OAuth redirect (public: authenticated by the signed state it carries)
@@ -597,7 +688,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/slack.ts]
 
   # Android widget: read-only, authenticated in the function with a device token (no Cognito authorizer)
@@ -606,8 +697,11 @@ Resources:
     Properties:
       CodeUri: ./
       Handler: widget.handler
+      MemorySize: 2048
+      Layers: [!Ref DuckDbLayer]
       Timeout: 10
       Policies:
+        - S3ReadPolicy: { BucketName: !Ref DataBucket }
         - Statement:
             - Effect: Allow
               Action: dsql:DbConnectAdmin
@@ -622,7 +716,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/widget.ts]
 
   # Kiosk screens (wall displays): read-only, authenticated in the function with the kiosk URL's token (no Cognito)
@@ -631,8 +725,11 @@ Resources:
     Properties:
       CodeUri: ./
       Handler: kiosk.handler
+      MemorySize: 2048
+      Layers: [!Ref DuckDbLayer]
       Timeout: 15
       Policies:
+        - S3ReadPolicy: { BucketName: !Ref DataBucket }
         - Statement:
             - Effect: Allow
               Action: dsql:DbConnectAdmin
@@ -647,7 +744,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/kiosk.ts]
 
   # MCP server (/mcp) and its OAuth discovery documents. No API Gateway authorizer: unauthenticated calls must
@@ -659,6 +756,8 @@ Resources:
     Properties:
       CodeUri: ./
       Handler: mcp.handler
+      MemorySize: 2048
+      Layers: [!Ref DuckDbLayer]
       Timeout: 20
       Environment:
         Variables:
@@ -669,6 +768,7 @@ Resources:
           MCP_ENABLED: !Ref EnableMcp
           EDGE_SECRET: !Select [2, !Split ['/', !Ref AWS::StackId]]
       Policies:
+        - S3ReadPolicy: { BucketName: !Ref DataBucket }
         - Statement:
             - Effect: Allow
               Action: dsql:DbConnectAdmin
@@ -696,7 +796,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/mcp.ts]
 
   # ---------------------------------------------------------------- WebSocket API (live updates)
@@ -732,7 +832,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/ws.ts]
 
   WsIntegration:
@@ -783,13 +883,16 @@ Resources:
       SourceArn: !Sub 'arn:${AWS::Partition}:execute-api:${AWS::Region}:${AWS::AccountId}:${WsApi}/*'
 
   # ---------------------------------------------------------------- maintenance
-  # Every 15 minutes: hourly rollups, hourly cluster metrics, daily retention. Each run stops after 12 minutes
-  # and resumes next time; no retries, so runs never overlap (no reserved concurrency needed).
+  # Every 15 minutes: merging small Parquet files, hourly rollups, hourly cluster metrics, daily retention (and,
+  # once, moving raw rows that older versions kept in DSQL). Each run stops after 12 minutes and resumes next
+  # time; no retries, so runs never overlap (no reserved concurrency needed).
   MaintenanceFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ./
       Handler: maintenance.handler
+      MemorySize: 3008
+      Layers: [!Ref DuckDbLayer]
       Timeout: 840
       EventInvokeConfig:
         MaximumRetryAttempts: 0
@@ -799,6 +902,7 @@ Resources:
           CLUSTER_METRICS_PROJECT_ID: !Ref ClusterMetricsProjectId
           TRIGGER_FUNCTION: !Ref TriggerFunction
       Policies:
+        - S3CrudPolicy: { BucketName: !Ref DataBucket }
         - Statement:
             - Effect: Allow
               Action: dsql:DbConnectAdmin
@@ -822,7 +926,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/maintenance.ts]
 
   # ---------------------------------------------------------------- schema migration
@@ -843,7 +947,7 @@ Resources:
         Minify: true
         Target: es2022
         Sourcemap: true
-        External: [pg-native]
+        External: [pg-native, '@duckdb/node-api']
         EntryPoints: [src/handlers/migrate.ts]
 
   DsqlSchema:
@@ -1043,8 +1147,14 @@ Outputs:
     Description: Dashboard API (also accepts /ingest directly, without geolocation)
     Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com'
   OtlpDeadLetterQueueUrl:
-    Description: OTLP requests that failed to store 5 times (DSQL errors). Redrive them to OtlpQueue once fixed.
+    Description: OTLP requests that failed to store 5 times. Redrive them to OtlpQueue once fixed.
     Value: !Ref OtlpDeadLetterQueue
+  EventsDeadLetterQueueUrl:
+    Description: Browser event batches that failed to store 5 times. Redrive them to EventsQueue once fixed.
+    Value: !Ref EventsDeadLetterQueue
+  DataBucketName:
+    Description: Raw data as Parquet ({table}/project_id=…/dt=…/). Query it with DuckDB or Athena if you like.
+    Value: !Ref DataBucket
   SlackRedirectUrl:
     Description: OAuth redirect URL for the Slack app (the app manifest printed by scripts/deploy.sh includes it)
     Value: !Sub 'https://${HttpApi}.execute-api.${AWS::Region}.amazonaws.com/slack/callback'

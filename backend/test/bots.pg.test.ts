@@ -16,9 +16,10 @@ d('bot traffic (PostgreSQL)', async () => {
   url.searchParams.set('options', `-c search_path=${SCHEMA}`);
   process.env.DATABASE_URL = url.toString();
 
-  const { query, insertRows, closeDb } = await import('../src/lib/db');
+  const { query, closeDb } = await import('../src/lib/db');
+  const { writeRows } = await import('../src/lib/store/write');
   const { SCHEMA_STATEMENTS } = await import('../src/lib/schema');
-  const { EVENT_COLUMNS, eventRowValues, normalizeBatch } = await import('../src/lib/events');
+  const { normalizeBatch } = await import('../src/lib/events');
   const A = await import('../src/lib/analytics');
 
   const pid = randomUUID();
@@ -46,7 +47,7 @@ d('bot traffic (PostgreSQL)', async () => {
       // five scraper "visitors": one pageview each, Shanghai time zone, proxies everywhere
       ...['DE', 'FR', 'BR', 'US', 'NL'].flatMap((c, i) => visit(`bot-${i}`, 'Asia/Shanghai', c, 1)),
     ];
-    await insertRows('events', EVENT_COLUMNS, rows.map(eventRowValues), { props: '::jsonb' });
+    await writeRows('events', rows);
   });
 
   afterAll(async () => {

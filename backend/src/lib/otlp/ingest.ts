@@ -1,19 +1,19 @@
 import { createHash } from 'node:crypto';
 import type { LogRecord, Span } from '../../contract';
-import { insertRows } from '../db';
 import { HttpError } from '../http';
+import { writeRows } from '../store/write';
 import { evaluateTriggers } from '../triggers';
 import { decodeProtobuf, ExportLogsServiceRequest, ExportMetricsServiceRequest, ExportTraceServiceRequest } from './proto';
 import {
-  LOG_COLUMNS, METRIC_COLUMNS, normalizeLogs, normalizeMetrics, normalizeTraces, SPAN_COLUMNS,
+  normalizeLogs, normalizeMetrics, normalizeTraces,
   type LogRow, type MetricRow, type SpanRow,
 } from './normalize';
 
 /** OTLP decoding and storage shared by the HTTP handler (local dev, tests) and the SQS consumer (deployed). */
 const SIGNALS = {
-  traces: { schema: ExportTraceServiceRequest, normalize: normalizeTraces, table: 'spans', columns: SPAN_COLUMNS, json: ['attributes', 'resource', 'events'] },
-  logs: { schema: ExportLogsServiceRequest, normalize: normalizeLogs, table: 'logs', columns: LOG_COLUMNS, json: ['attributes', 'resource'] },
-  metrics: { schema: ExportMetricsServiceRequest, normalize: normalizeMetrics, table: 'metric_points', columns: METRIC_COLUMNS, json: ['attributes'] },
+  traces: { schema: ExportTraceServiceRequest, normalize: normalizeTraces, table: 'spans' },
+  logs: { schema: ExportLogsServiceRequest, normalize: normalizeLogs, table: 'logs' },
+  metrics: { schema: ExportMetricsServiceRequest, normalize: normalizeMetrics, table: 'metric_points' },
 } as const;
 
 export type Signal = keyof typeof SIGNALS;
@@ -49,8 +49,8 @@ export function decodeOtlp(signal: Signal, projectId: string, body: Buffer, prot
 
 /**
  * Give log and metric rows ids derived from where they came from instead of random ones, so storing
- * the same message twice (an SQS redelivery) hits the primary key and is skipped. Spans are already
- * keyed by their trace and span ids.
+ * the same message twice (an SQS redelivery) produces the same rows, which compaction then drops.
+ * Spans are already keyed by their trace and span ids.
  */
 export function assignStableIds(rows: OtlpRow[], sourceId: string): void {
   rows.forEach((row, i) => {
@@ -60,17 +60,9 @@ export function assignStableIds(rows: OtlpRow[], sourceId: string): void {
   });
 }
 
-export async function insertOtlpRows(signal: Signal, rows: OtlpRow[]): Promise<void> {
-  if (!rows.length) return;
-  const cfg = SIGNALS[signal];
-  const json = cfg.json as readonly string[];
-  const columns = cfg.columns as readonly string[];
-  await insertRows(
-    cfg.table,
-    [...columns],
-    rows.map((r) => columns.map((c) => (json.includes(c) ? JSON.stringify((r as never)[c]) : (r as never)[c]))),
-    Object.fromEntries(json.map((c) => [c, '::jsonb'])),
-  );
+/** Store rows as Parquet: one file per project and day for the whole batch. */
+export async function storeOtlpRows(signal: Signal, rows: OtlpRow[]): Promise<void> {
+  await writeRows(SIGNALS[signal].table, rows);
 }
 
 const toLogRecord = (r: LogRow): LogRecord => ({

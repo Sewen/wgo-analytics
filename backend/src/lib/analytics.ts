@@ -3,10 +3,10 @@ import type {
   HttpErrorGroup, LogRecord, LogsResponse, MetricInfo,
   MetricSeriesResponse, PageRow, ServiceRow, Span, StatsResponse, Totals, TraceResponse, TraceSummary, VitalsResponse,
 } from '../contract';
-import { query } from './db';
+import { rawQuery, inList, type Window as Win } from './store/duck';
 import { stacksFor } from './errorStacks';
 import { toApiEvent, type EventRow } from './events';
-import { COLUMNS, fieldExpression, filtersFrom, parseFilters, includeBots } from './filters';
+import { COLUMNS, fieldExpression, filtersFrom, includeBots, jsonPath, parseFilters } from './filters';
 import { Hll } from './hll';
 import { HttpError } from './http';
 import { projectRetention } from './retention';
@@ -49,8 +49,10 @@ const limitParam = (v: string | undefined, def: number, max: number) => {
   return Number.isFinite(n) && n > 0 ? Math.min(Math.floor(n), max) : def;
 };
 const likeEscape = (s: string) => `%${s.replace(/[\\%_]/g, (c) => '\\' + c)}%`;
+/** ILIKE with the backslash escape PostgreSQL uses by default (DuckDB has none). */
+const ILIKE = (param: string) => `ILIKE ${param} ESCAPE '\\'`;
 const iso = (d: Date | string | null) => (d ? (d instanceof Date ? d : new Date(d)).toISOString() : null);
-const BUCKET_SQL = (col: string, param: string) => `to_timestamp(floor(extract(epoch from ${col}) / ${param}::numeric) * ${param}::numeric)`;
+const BUCKET_SQL = (col: string, param: string) => `to_timestamp(floor(extract(epoch from ${col}) / ${param}::double) * ${param}::double)`;
 
 // ---------------- product analytics ----------------
 
@@ -74,7 +76,7 @@ async function rollupPlan(pid: string, r: Range, p: Params): Promise<Plan | null
 async function rawTotals(pid: string, r: Range, p: Params): Promise<Totals> {
   const params: unknown[] = [pid, r.from, r.to];
   const F = filtersFrom(p, 'events', params);
-  const [row] = await query<Totals>(
+  const [row] = await rawQuery<Totals>(pid, r,
     `SELECT count(*)::int AS events,
             sum(CASE WHEN type = 'pageview' THEN 1 ELSE 0 END)::int AS pageviews,
             sum(CASE WHEN type = 'click' THEN 1 ELSE 0 END)::int AS clicks,
@@ -128,7 +130,7 @@ type SeriesPoint = StatsResponse['series'][number];
 const emptyPoint = (t: number): SeriesPoint => ({ t: new Date(t).toISOString(), pageview: 0, click: 0, error: 0, http_error: 0, custom: 0 });
 
 const rawBotSessions = async (pid: string, span: Window): Promise<number> =>
-  (await query<{ n: number }>(
+  (await rawQuery<{ n: number }>(pid, span,
     `SELECT count(DISTINCT session_id)::int AS n FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NOT NULL`,
     [pid, span.from, span.to],
   ))[0]?.n ?? 0;
@@ -155,6 +157,7 @@ export async function stats(pid: string, p: Params): Promise<StatsResponse> {
   const compare = p.compare !== '0' && p.compare !== 'false';
   const plan = await rollupPlan(pid, r, p);
   const hiddenBots = botSessions(pid, r, p, plan);
+  hiddenBots.catch(() => undefined); // awaited below; if another query fails first, this must not be an unhandled rejection
   // rollups are hourly: their buckets are at least an hour
   const bucket = plan ? Math.max(pickBucket(r), 3600) : pickBucket(r);
   const byT = new Map<number, SeriesPoint>();
@@ -179,7 +182,7 @@ export async function stats(pid: string, p: Params): Promise<StatsResponse> {
   const [current, previous, rows] = await Promise.all([
     rawTotals(pid, r, p),
     compare ? totals(pid, prevRange, p) : Promise.resolve(null),
-    query<{ t: Date; type: EventType; n: number }>(
+    rawQuery<{ t: Date; type: EventType; n: number }>(pid, r,
       `SELECT ${BUCKET_SQL('ts', '$4')} AS t, type, count(*)::int AS n
          FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3${F}
         GROUP BY 1, 2`,
@@ -194,7 +197,7 @@ export async function clicks(pid: string, p: Params): Promise<ClickRow[]> {
   const r = parseRange(p);
   const params: unknown[] = [pid, r.from, r.to, limitParam(p.limit, 50, 500)];
   const F = filtersFrom(p, 'events', params);
-  const rows = await query<{ selector: string; element_text: string | null; track_name: string | null; element_tag: string | null; count: number; sessions: number; rage: number; last_seen: Date }>(
+  const rows = await rawQuery<{ selector: string; element_text: string | null; track_name: string | null; element_tag: string | null; count: number; sessions: number; rage: number; last_seen: Date }>(pid, r,
     `SELECT selector, element_text, track_name, max(element_tag) AS element_tag,
             count(*)::int AS count, count(DISTINCT session_id)::int AS sessions,
             sum(CASE WHEN props->>'rage' IS NOT NULL THEN 1 ELSE 0 END)::int AS rage, max(ts) AS last_seen
@@ -213,7 +216,7 @@ export async function clicks(pid: string, p: Params): Promise<ClickRow[]> {
 async function rawPages(pid: string, span: Window, limit: number, p: Params): Promise<PageRow[]> {
   const params: unknown[] = [pid, span.from, span.to, limit];
   const F = filtersFrom(p, 'events', params);
-  return query<PageRow>(
+  return rawQuery<PageRow>(pid, span,
     `SELECT path, count(*)::int AS views, count(DISTINCT session_id)::int AS sessions
        FROM events WHERE project_id = $1 AND type = 'pageview' AND ts >= $2 AND ts < $3 AND path IS NOT NULL${F}
       GROUP BY path ORDER BY views DESC LIMIT $4`,
@@ -242,11 +245,12 @@ async function sampleStacks(pid: string, r: Range, fingerprints: string[]): Prom
   const stacks = await stacksFor(pid, fingerprints);
   const missing = fingerprints.filter((f) => !stacks.has(f));
   if (missing.length) {
-    const legacy = await query<{ fingerprint: string; stack: string }>(
+    const params: unknown[] = [pid, r.from, r.to];
+    const legacy = await rawQuery<{ fingerprint: string; stack: string }>(pid, r,
       `SELECT fingerprint, max(error_stack) AS stack FROM events
-        WHERE project_id = $1 AND type = 'error' AND ts >= $2 AND ts < $3 AND fingerprint = ANY($4::text[]) AND error_stack IS NOT NULL
+        WHERE project_id = $1 AND type = 'error' AND ts >= $2 AND ts < $3 AND fingerprint IN ${inList(params, missing)} AND error_stack IS NOT NULL
         GROUP BY 1`,
-      [pid, r.from, r.to, missing],
+      params,
     );
     for (const l of legacy) stacks.set(l.fingerprint, l.stack);
   }
@@ -257,7 +261,7 @@ export async function errors(pid: string, p: Params): Promise<ErrorGroup[]> {
   const r = parseRange(p);
   const params: unknown[] = [pid, r.from, r.to, limitParam(p.limit, 100, 500)];
   const F = filtersFrom(p, 'events', params);
-  const groups = await query<{ fingerprint: string; message: string; kind: string | null; count: number; sessions: number; first_seen: Date; last_seen: Date; sample_url: string | null; source: string | null }>(
+  const groups = await rawQuery<{ fingerprint: string; message: string; kind: string | null; count: number; sessions: number; first_seen: Date; last_seen: Date; sample_url: string | null; source: string | null }>(pid, r,
     `SELECT fingerprint, max(error_message) AS message, max(props->>'kind') AS kind,
             sum(COALESCE((props->>'count')::int, 1))::int AS count, count(DISTINCT session_id)::int AS sessions,
             min(ts) AS first_seen, max(ts) AS last_seen,
@@ -268,12 +272,13 @@ export async function errors(pid: string, p: Params): Promise<ErrorGroup[]> {
   );
   if (!groups.length) return [];
   const step = (r.to.getTime() - r.from.getTime()) / 1000 / SPARK_BUCKETS;
-  const sparkParams: unknown[] = [pid, r.from, r.to, step, groups.map((g) => g.fingerprint)];
+  const sparkParams: unknown[] = [pid, r.from, r.to, step];
+  const fps = inList(sparkParams, groups.map((g) => g.fingerprint));
   const SF = filtersFrom(p, 'events', sparkParams);
-  const spark = await query<{ fingerprint: string; b: number; n: number }>(
-    `SELECT fingerprint, floor(extract(epoch from (ts - $2::timestamptz)) / $4::numeric)::int AS b,
+  const spark = await rawQuery<{ fingerprint: string; b: number; n: number }>(pid, r,
+    `SELECT fingerprint, floor(extract(epoch from (ts - $2::TIMESTAMP)) / $4::double)::int AS b,
             sum(COALESCE((props->>'count')::int, 1))::int AS n
-       FROM events WHERE project_id = $1 AND type = 'error' AND ts >= $2 AND ts < $3 AND fingerprint = ANY($5::text[])${SF}
+       FROM events WHERE project_id = $1 AND type = 'error' AND ts >= $2 AND ts < $3 AND fingerprint IN ${fps}${SF}
       GROUP BY 1, 2`,
     sparkParams,
   );
@@ -294,7 +299,7 @@ export async function httpErrors(pid: string, p: Params): Promise<HttpErrorGroup
   const r = parseRange(p);
   const params: unknown[] = [pid, r.from, r.to, limitParam(p.limit, 100, 500)];
   const F = filtersFrom(p, 'events', params);
-  const rows = await query<{ method: string; route: string; status: number; count: number; sessions: number; avg: number | null; last_seen: Date; sample_url: string | null }>(
+  const rows = await rawQuery<{ method: string; route: string; status: number; count: number; sessions: number; avg: number | null; last_seen: Date; sample_url: string | null }>(pid, r,
     `SELECT http_method AS method, http_route AS route, http_status AS status, count(*)::int AS count,
             count(DISTINCT session_id)::int AS sessions, avg(duration_ms)::float8 AS avg,
             max(ts) AS last_seen, max(http_url) AS sample_url
@@ -325,7 +330,7 @@ async function rawBreakdown(pid: string, span: Window, dim: string, p: Params, l
     dim === 'referrer' ? `AND type = 'pageview' AND (referrer IS NULL OR split_part(referrer, '/', 3) <> split_part(url, '/', 3))` : '';
   const params: unknown[] = [pid, span.from, span.to];
   const F = filtersFrom(p, 'events', params);
-  return query<BreakdownRow>(
+  return rawQuery<BreakdownRow>(pid, span,
     `SELECT COALESCE(${expr}, ${dim === 'referrer' ? `'(direct)'` : `'Unknown'`}) AS key, count(DISTINCT session_id)::int AS count
        FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 ${typeFilter}${F}
       GROUP BY 1 ORDER BY count DESC LIMIT ${limit}`,
@@ -353,20 +358,20 @@ export async function geo(pid: string, p: Params): Promise<GeoResponse> {
   const params: unknown[] = [pid, r.from, r.to];
   const F = filtersFrom(p, 'events', params);
   const [points, countries, [counts]] = await Promise.all([
-    query<{ lat: number; lon: number; city: string | null; country: string | null; sessions: number; events: number }>(
+    rawQuery<{ lat: number; lon: number; city: string | null; country: string | null; sessions: number; events: number }>(pid, r,
       `SELECT lat, lon, max(city) AS city, max(country) AS country,
               count(DISTINCT session_id)::int AS sessions, count(*)::int AS events
          FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND lat IS NOT NULL${F}
         GROUP BY lat, lon ORDER BY sessions DESC LIMIT 1000`,
       params,
     ),
-    query<{ country: string; sessions: number; events: number }>(
+    rawQuery<{ country: string; sessions: number; events: number }>(pid, r,
       `SELECT country, count(DISTINCT session_id)::int AS sessions, count(*)::int AS events
          FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND country IS NOT NULL${F}
         GROUP BY country ORDER BY sessions DESC LIMIT 250`,
       params,
     ),
-    query<{ located: number; total: number }>(
+    rawQuery<{ located: number; total: number }>(pid, r,
       `SELECT count(DISTINCT CASE WHEN country IS NOT NULL THEN session_id END)::int AS located,
               count(DISTINCT session_id)::int AS total
          FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3${F}`,
@@ -381,7 +386,7 @@ export async function vitals(pid: string, p: Params): Promise<VitalsResponse> {
   const pct = (k: string) => `percentile_cont(0.75) WITHIN GROUP (ORDER BY (props->>'${k}')::float8) AS ${k}`;
   const params: unknown[] = [pid, r.from, r.to];
   const F = filtersFrom(p, 'events', params);
-  const [row] = await query<{ samples: number; lcp: number | null; fcp: number | null; cls: number | null; inp: number | null; ttfb: number | null }>(
+  const [row] = await rawQuery<{ samples: number; lcp: number | null; fcp: number | null; cls: number | null; inp: number | null; ttfb: number | null }>(pid, r,
     `SELECT count(*)::int AS samples, ${['lcp', 'fcp', 'cls', 'inp', 'ttfb'].map(pct).join(', ')}
        FROM events WHERE project_id = $1 AND type = 'vitals' AND ts >= $2 AND ts < $3${F}`,
     params,
@@ -389,17 +394,43 @@ export async function vitals(pid: string, p: Params): Promise<VitalsResponse> {
   return { samples: row?.samples ?? 0, p75: { lcp: row?.lcp ?? null, fcp: row?.fcp ?? null, cls: row?.cls ?? null, inp: row?.inp ?? null, ttfb: row?.ttfb ?? null } };
 }
 
+/**
+ * Newest rows first, a slice at a time (last hour, day, week, then the rest), stopping once `limit` rows are
+ * found: the latest 100 events of a busy project shouldn't scan its whole range.
+ */
+async function newestFirst<T>(w: Win, limit: number, fetch: (slice: Win, limit: number) => Promise<T[]>): Promise<T[]> {
+  const out: T[] = [];
+  const from = w.from.getTime();
+  let end = w.to.getTime();
+  for (const back of [3600_000, DAY_MS, 7 * DAY_MS, Infinity]) {
+    const start = Math.max(from, w.to.getTime() - back);
+    if (start < end) out.push(...(await fetch({ from: new Date(start), to: new Date(end) }, limit - out.length)));
+    if (out.length >= limit || start <= from) break;
+    end = start;
+  }
+  return out;
+}
+
+const validDate = (v: string | undefined) => {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) throw new HttpError(400, `Invalid date: ${v}`);
+  return d;
+};
+
 export async function events(pid: string, p: Params): Promise<EventsResponse> {
   const limit = limitParam(p.limit, 100, 500);
-  const where = ['project_id = $1'];
-  const params: unknown[] = [pid];
+  // no `from`: everything still stored
+  const w: Win = {
+    from: validDate(p.from) ?? new Date(Date.now() - (await projectRetention(pid)) * DAY_MS),
+    to: validDate(p.before) ?? validDate(p.to) ?? new Date(Date.now() + 60_000),
+  };
+  const where = ['project_id = $1', 'ts >= $2', 'ts < $3'];
+  const params: unknown[] = [pid, w.from, w.to];
   const add = (sql: string, v: unknown) => {
     params.push(v);
     where.push(sql.replace('?', `$${params.length}`));
   };
-  if (p.before) add('ts < ?', new Date(p.before));
-  if (p.from) add('ts >= ?', new Date(p.from));
-  if (p.to && !p.before) add('ts < ?', new Date(p.to));
   if (p.type) add('type = ?', p.type);
   if (p.sessionId) add('session_id = ?', p.sessionId);
   if (p.fingerprint) add('fingerprint = ?', p.fingerprint);
@@ -414,12 +445,12 @@ export async function events(pid: string, p: Params): Promise<EventsResponse> {
     params.push(likeEscape(p.q));
     const n = `$${params.length}`;
     where.push(
-      `(path ILIKE ${n} OR selector ILIKE ${n} OR element_text ILIKE ${n} OR track_name ILIKE ${n} OR error_message ILIKE ${n} OR http_url ILIKE ${n} OR name ILIKE ${n} OR user_id ILIKE ${n})`,
+      `(${['path', 'selector', 'element_text', 'track_name', 'error_message', 'http_url', 'name', 'user_id'].map((c) => `${c} ${ILIKE(n)}`).join(' OR ')})`,
     );
   }
   const F = filtersFrom(p, 'events', params);
-  params.push(limit);
-  const rows = await query<EventRow>(`SELECT * FROM events WHERE ${where.join(' AND ')}${F} ORDER BY ts DESC LIMIT $${params.length}`, params);
+  const sql = `SELECT * FROM events WHERE ${where.join(' AND ')}${F} ORDER BY ts DESC LIMIT $${params.length + 1}`;
+  const rows = await newestFirst(w, limit, (slice, n) => rawQuery<EventRow>(pid, slice, sql, [pid, slice.from, slice.to, ...params.slice(3), n]));
   const evts = rows.map(toApiEvent);
   // error events no longer carry their stack: show their group's
   const needStack = evts.filter((e) => e.type === 'error' && !e.errorStack && e.fingerprint);
@@ -448,13 +479,13 @@ export async function traces(pid: string, p: Params): Promise<TraceSummary[]> {
   if (p.errorsOnly === '1' || p.errorsOnly === 'true') having.push('sum(CASE WHEN status_code = 2 THEN 1 ELSE 0 END) > 0');
   if (p.q) {
     params.push(likeEscape(p.q));
-    where.push(`trace_id IN (SELECT trace_id FROM spans WHERE project_id = $1 AND start_time >= $2 AND start_time < $3 AND (name ILIKE $${params.length} OR trace_id = $${params.length + 1}))`);
+    where.push(`trace_id IN (SELECT trace_id FROM spans WHERE project_id = $1 AND start_time >= $2 AND start_time < $3 AND (name ${ILIKE('$' + params.length)} OR trace_id = $${params.length + 1}))`);
     params.push(p.q.toLowerCase());
   }
   const F = filtersFrom(p, 'spans', params);
   if (F) where.push(`trace_id IN (SELECT trace_id FROM spans WHERE project_id = $1 AND start_time >= $2 AND start_time < $3${F})`);
   params.push(limitParam(p.limit, 100, 500));
-  const rows = await query<{ trace_id: string; root_name: string | null; any_name: string; root_service: string | null; any_service: string; start: Date; dur: number; span_count: number; error_count: number; services: string }>(
+  const rows = await rawQuery<{ trace_id: string; root_name: string | null; any_name: string; root_service: string | null; any_service: string; start: Date; dur: number; span_count: number; error_count: number; services: string }>(pid, r,
     `SELECT trace_id,
             max(CASE WHEN parent_span_id IS NULL THEN name END) AS root_name, min(name) AS any_name,
             max(CASE WHEN parent_span_id IS NULL THEN service END) AS root_service, min(service) AS any_service,
@@ -488,14 +519,29 @@ interface SpanDbRow {
   attributes: Record<string, unknown>; resource: Record<string, unknown>; events: Span['events'];
 }
 
-export async function trace(pid: string, traceId: string): Promise<TraceResponse> {
+/**
+ * All spans of one trace. Spans are stored by day, so a trace is looked up around `at` (any time within it,
+ * e.g. a log record's) when given, then in the last two days, then across everything still stored.
+ */
+export async function trace(pid: string, traceId: string, p: Params = {}): Promise<TraceResponse> {
   if (!/^[0-9a-f]{32}$/i.test(traceId)) throw new HttpError(400, 'Invalid trace id');
-  const rows = await query<SpanDbRow>(
-    // timestamps are millisecond-precision: on ties, roots sort before their children
-    `SELECT * FROM spans WHERE project_id = $1 AND trace_id = $2
-      ORDER BY start_time, (parent_span_id IS NOT NULL), end_time DESC LIMIT 5000`,
-    [pid, traceId.toLowerCase()],
-  );
+  const at = validDate(p.at)?.getTime();
+  const now = Date.now();
+  const windows: Win[] = [
+    ...(at ? [{ from: new Date(at - DAY_MS), to: new Date(at + DAY_MS) }] : []),
+    { from: new Date(now - 2 * DAY_MS), to: new Date(now + 60_000) },
+    { from: new Date(now - (await projectRetention(pid)) * DAY_MS), to: new Date(now + 60_000) },
+  ];
+  let rows: SpanDbRow[] = [];
+  for (const w of windows) {
+    rows = await rawQuery<SpanDbRow>(pid, w,
+      // timestamps are millisecond-precision: on ties, roots sort before their children
+      `SELECT * FROM spans WHERE project_id = $1 AND trace_id = $2
+        ORDER BY start_time, (parent_span_id IS NOT NULL), end_time DESC LIMIT 5000`,
+      [pid, traceId.toLowerCase()],
+    );
+    if (rows.length) break;
+  }
   if (!rows.length) throw new HttpError(404, 'Trace not found');
   return {
     spans: rows.map((s) => ({
@@ -510,7 +556,7 @@ export async function services(pid: string, p: Params): Promise<ServiceRow[]> {
   const r = parseRange(p, 3600 * 1000);
   const params: unknown[] = [pid, r.from, r.to];
   const F = filtersFrom(p, 'spans', params);
-  const rows = await query<{ service: string; spans: number; errors: number; p50: number; p95: number }>(
+  const rows = await rawQuery<{ service: string; spans: number; errors: number; p50: number; p95: number }>(pid, r,
     `SELECT service, count(*)::int AS spans, sum(CASE WHEN status_code = 2 THEN 1 ELSE 0 END)::int AS errors,
             percentile_cont(0.5) WITHIN GROUP (ORDER BY duration_ms) AS p50,
             percentile_cont(0.95) WITHIN GROUP (ORDER BY duration_ms) AS p95
@@ -524,7 +570,8 @@ export async function services(pid: string, p: Params): Promise<ServiceRow[]> {
 export async function logs(pid: string, p: Params): Promise<LogsResponse> {
   const r = parseRange(p, 3600 * 1000);
   const limit = limitParam(p.limit, 200, 1000);
-  const params: unknown[] = [pid, r.from, p.before ? new Date(p.before) : r.to];
+  const w: Win = { from: r.from, to: validDate(p.before) ?? r.to };
+  const params: unknown[] = [pid, w.from, w.to];
   const where = ['project_id = $1', 'ts >= $2', 'ts < $3'];
   const add = (sql: string, v: unknown) => {
     params.push(v);
@@ -533,14 +580,12 @@ export async function logs(pid: string, p: Params): Promise<LogsResponse> {
   if (p.severity && Number(p.severity) > 0) add('severity_number >= ?', Number(p.severity));
   if (p.service) add('service = ?', p.service);
   if (p.traceId) add('trace_id = ?', p.traceId.toLowerCase());
-  if (p.q) add('body ILIKE ?', likeEscape(p.q));
+  if (p.q) add(`body ${ILIKE('?')}`, likeEscape(p.q));
   const F = filtersFrom(p, 'logs', params);
-  params.push(limit);
-  const rows = await query<{ id: string; ts: Date; severity_number: number; severity_text: string | null; body: string; service: string; trace_id: string | null; span_id: string | null; attributes: Record<string, unknown>; resource: Record<string, unknown> }>(
-    `SELECT id, ts, severity_number, severity_text, body, service, trace_id, span_id, attributes, resource
-       FROM logs WHERE ${where.join(' AND ')}${F} ORDER BY ts DESC LIMIT $${params.length}`,
-    params,
-  );
+  type LogDbRow = { id: string; ts: Date; severity_number: number; severity_text: string | null; body: string; service: string; trace_id: string | null; span_id: string | null; attributes: Record<string, unknown>; resource: Record<string, unknown> };
+  const sql = `SELECT id, ts, severity_number, severity_text, body, service, trace_id, span_id, attributes, resource
+       FROM logs WHERE ${where.join(' AND ')}${F} ORDER BY ts DESC LIMIT $${params.length + 1}`;
+  const rows = await newestFirst(w, limit, (slice, n) => rawQuery<LogDbRow>(pid, slice, sql, [pid, slice.from, slice.to, ...params.slice(3), n]));
   const out: LogRecord[] = rows.map((x) => ({
     id: x.id, ts: iso(x.ts)!, severityNumber: x.severity_number, severityText: x.severity_text, body: x.body, service: x.service,
     traceId: x.trace_id, spanId: x.span_id, attributes: x.attributes ?? {}, resource: x.resource ?? {},
@@ -550,7 +595,7 @@ export async function logs(pid: string, p: Params): Promise<LogsResponse> {
 
 export async function metrics(pid: string, p: Params): Promise<MetricInfo[]> {
   const r = parseRange(p);
-  const rows = await query<{ name: string; type: MetricInfo['type']; unit: string | null; description: string | null; service: string; points: number; last_seen: Date }>(
+  const rows = await rawQuery<{ name: string; type: MetricInfo['type']; unit: string | null; description: string | null; service: string; points: number; last_seen: Date }>(pid, r,
     `SELECT name, type, unit, max(description) AS description, service, count(*)::int AS points, max(ts) AS last_seen
        FROM metric_points WHERE project_id = $1 AND ts >= $2 AND ts < $3
       GROUP BY name, type, unit, service ORDER BY name LIMIT 1000`,
@@ -575,12 +620,12 @@ export async function metricSeries(pid: string, p: Params): Promise<MetricSeries
   if (!agg) throw new HttpError(400, 'agg must be avg, sum, min, max or p95');
   const bucket = pickBucket(r);
   const groupBy = p.groupBy?.trim();
-  const keyExpr = groupBy ? `COALESCE(attributes->>$5, '(none)')` : '$2::text';
+  const keyExpr = groupBy ? `COALESCE(json_extract_string(attributes, $5), '(none)')` : '$2::text';
   const params: unknown[] = [pid, p.name, r.from, r.to];
-  if (groupBy) params.push(groupBy);
+  if (groupBy) params.push(jsonPath([groupBy]));
   params.push(bucket);
   const bucketParam = `$${params.length}`;
-  const rows = await query<{ key: string; t: Date; value: number }>(
+  const rows = await rawQuery<{ key: string; t: Date; value: number }>(pid, r,
     `SELECT ${keyExpr} AS key, ${BUCKET_SQL('ts', bucketParam)} AS t, (${agg})::float8 AS value
        FROM metric_points WHERE project_id = $1 AND name = $2 AND ts >= $3 AND ts < $4
       GROUP BY 1, 2 ORDER BY 2`,
@@ -622,12 +667,14 @@ export async function fields(pid: string, p: Params): Promise<FieldsResponse> {
   const SAMPLE = 5000;
   for (const [column, prefix] of json) {
     // top-level keys, plus one level down for event props (custom events keep their props under `props`)
-    const rows = await query<{ k: string; n: number }>(
+    const rows = await rawQuery<{ k: string; n: number }>(pid, r,
       `SELECT k, count(*)::int AS n FROM (
-         SELECT ${column} AS j FROM ${table} WHERE project_id = $1 AND ${time} >= $2 AND ${time} < $3 AND ${column} IS NOT NULL
-          ORDER BY ${time} DESC LIMIT ${SAMPLE}
-       ) s, jsonb_object_keys(CASE WHEN jsonb_typeof(s.j) = 'object' THEN s.j ELSE '{}'::jsonb END) AS k
-       GROUP BY k ORDER BY n DESC LIMIT 200`,
+         SELECT unnest(json_keys(j)) AS k FROM (
+           SELECT ${column} AS j FROM ${table} WHERE project_id = $1 AND ${time} >= $2 AND ${time} < $3 AND json_type(${column}) = 'OBJECT'
+            ORDER BY ${time} DESC LIMIT ${SAMPLE}
+         ) s
+       ) keys
+       GROUP BY k ORDER BY n DESC, k LIMIT 200`,
       [pid, r.from, r.to],
     );
     for (const { k, n } of rows) {
@@ -636,13 +683,16 @@ export async function fields(pid: string, p: Params): Promise<FieldsResponse> {
     }
     if (scope === 'events') {
       for (const nested of ['props', '$ctx']) {
-        const sub = await query<{ k: string; n: number }>(
+        const sub = await rawQuery<{ k: string; n: number }>(pid, r,
           `SELECT k, count(*)::int AS n FROM (
-             SELECT ${column} -> $4 AS j FROM ${table} WHERE project_id = $1 AND ${time} >= $2 AND ${time} < $3 AND ${column} ? $4
-              ORDER BY ${time} DESC LIMIT ${SAMPLE}
-           ) s, jsonb_object_keys(CASE WHEN jsonb_typeof(s.j) = 'object' THEN s.j ELSE '{}'::jsonb END) AS k
-           GROUP BY k ORDER BY n DESC LIMIT 100`,
-          [pid, r.from, r.to, nested],
+             SELECT unnest(json_keys(j)) AS k FROM (
+               SELECT json_extract(${column}, $4) AS j FROM ${table}
+                WHERE project_id = $1 AND ${time} >= $2 AND ${time} < $3 AND json_type(json_extract(${column}, $4)) = 'OBJECT'
+                ORDER BY ${time} DESC LIMIT ${SAMPLE}
+             ) s
+           ) keys
+           GROUP BY k ORDER BY n DESC, k LIMIT 100`,
+          [pid, r.from, r.to, jsonPath([nested])],
         );
         for (const { k, n } of sub) discovered.push({ field: `${prefix}${nested}.${k}`, type: 'json', count: n });
       }
@@ -660,8 +710,8 @@ export async function fieldValues(pid: string, p: Params): Promise<FieldValuesRe
   const { table, time } = SCOPE_TABLE[scope];
   const params: unknown[] = [pid, r.from, r.to];
   const expr = fieldExpression(scope, p.field, params);
-  const qFilter = p.q ? ` AND (${expr})::text ILIKE $${params.push(likeEscape(p.q))}` : '';
-  const rows = await query<{ value: string; count: number }>(
+  const qFilter = p.q ? ` AND (${expr})::text ${ILIKE('$' + params.push(likeEscape(p.q)))}` : '';
+  const rows = await rawQuery<{ value: string; count: number }>(pid, r,
     `SELECT (${expr})::text AS value, count(*)::int AS count
        FROM ${table} WHERE project_id = $1 AND ${time} >= $2 AND ${time} < $3 AND (${expr}) IS NOT NULL${qFilter}
       GROUP BY 1 ORDER BY count DESC LIMIT 20`,

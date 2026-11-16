@@ -26,7 +26,7 @@ export function sevInfo(n: number): { name: string; color: string } {
   return { name: 'TRACE', color: 'var(--faint)' };
 }
 
-function LogRow({ l, open, toggle, traceHref }: { l: LogRecord; open: boolean; toggle: () => void; traceHref: (id: string) => void }) {
+function LogRow({ l, open, toggle, traceHref }: { l: LogRecord; open: boolean; toggle: () => void; traceHref: (id: string, at: string) => void }) {
   const s = sevInfo(l.severityNumber);
   const conditions = useMemo(() => logConditions(l), [l]);
   return (
@@ -37,7 +37,7 @@ function LogRow({ l, open, toggle, traceHref }: { l: LogRecord; open: boolean; t
         <span className="w-[50px] shrink-0 font-mono text-[11px] font-semibold" style={{ color: s.color }}>{s.name}</span>
         <span className="w-[110px] shrink-0 truncate text-[12px] text-muted">{l.service}</span>
         <span className={cn('min-w-0 flex-1 font-mono text-[12px] leading-[1.5]', open ? 'whitespace-pre-wrap break-words' : 'truncate')}>{l.body}</span>
-        {l.traceId && <button onClick={(e) => { e.stopPropagation(); traceHref(l.traceId!); }} className="shrink-0 font-mono text-[11px] text-faint hover:text-accent cursor-pointer" title="Open trace">{l.traceId.slice(0, 8)}</button>}
+        {l.traceId && <button onClick={(e) => { e.stopPropagation(); traceHref(l.traceId!, l.ts); }} className="shrink-0 font-mono text-[11px] text-faint hover:text-accent cursor-pointer" title="Open trace">{l.traceId.slice(0, 8)}</button>}
         <RowActions scope="logs" conditions={conditions} className="-my-0.5" />
       </div>
       {open && (
@@ -79,7 +79,7 @@ export function LogsPage() {
       </div>
       <Card className="overflow-hidden">
         {logs.isPending ? <RowsSkeleton n={14} /> : rows.length === 0 ? <EmptyState icon={<ScrollText size={22} />} title="No logs match">Send OTLP logs to your ingest endpoint, or loosen the filters.</EmptyState> : (
-          <div>{rows.map((l) => <LogRow key={l.id} l={l} open={open.has(l.id)} toggle={() => setOpen((o) => { const n = new Set(o); n.has(l.id) ? n.delete(l.id) : n.add(l.id); return n; })} traceHref={(id) => navigate(pageHref(project.id, `traces/${id}`, route.params))} />)}
+          <div>{rows.map((l) => <LogRow key={l.id} l={l} open={open.has(l.id)} toggle={() => setOpen((o) => { const n = new Set(o); n.has(l.id) ? n.delete(l.id) : n.add(l.id); return n; })} traceHref={(id, at) => navigate(pageHref(project.id, `traces/${id}`, route.params, { at }))} />)}
             <div ref={sentinel} className="p-3 text-center text-[12px] text-faint">{logs.isFetchingNextPage ? <Skeleton className="mx-auto h-4 w-32" /> : logs.hasNextPage ? '' : 'End of logs'}</div></div>)}
       </Card>
     </div>

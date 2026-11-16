@@ -71,8 +71,9 @@ export const useMetricSeries = (pid: string, r: TimeRange, name: string | null, 
   useQuery(q<MetricSeriesResponse>(pid, 'metric-series', r, 'metrics/series', { name: name ?? '', agg, groupBy: groupBy || undefined }, !!name));
 export const useTraces = (pid: string, r: TimeRange, f: { service?: string; minDurationMs?: number; errorsOnly?: boolean; q?: string }) =>
   useQuery(q<TraceSummary[]>(pid, 'traces', r, 'traces', { limit: 200, ...f }));
-export const useTrace = (pid: string, traceId: string | null) =>
-  useQuery({ queryKey: ['trace', pid, traceId], queryFn: () => api<TraceResponse>(`${base(pid)}/traces/${traceId}`), enabled: !!traceId, staleTime: 5 * 60_000 });
+/** `at`: any time within the trace (its start, a log record's time), so the API looks in the right day first */
+export const useTrace = (pid: string, traceId: string | null, at?: string | null) =>
+  useQuery({ queryKey: ['trace', pid, traceId], queryFn: () => api<TraceResponse>(`${base(pid)}/traces/${traceId}`, { params: at ? { at } : {} }), enabled: !!traceId, staleTime: 5 * 60_000 });
 
 export function useEvents(pid: string, r: TimeRange, base_: { type?: string; q?: string; sessionId?: string; fingerprint?: string }, enabled = true, limit = 100) {
   const f = { ...base_, filters: filtersParam('events'), bots: botsParam() };

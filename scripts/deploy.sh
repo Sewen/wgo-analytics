@@ -13,7 +13,8 @@
 #   ALLOW_SELF_SIGNUP      true (default) | false
 #   DELETION_PROTECTION    false (default) | true  (DSQL cluster)
 #   MCP_ENABLED            true (default) | false: the MCP server at /mcp and Cognito MCP auth (open client registration)
-#   MAX_RETENTION_DAYS     90 (default): the longest raw-data retention project owners can pick (default retention: 14 days)
+#   MAX_RETENTION_DAYS     400 (default): the longest raw-data retention project owners can pick (default retention: 90 days)
+#   WRITE_BUFFER_SECONDS   30 (default): how long incoming data is collected before it is written as one Parquet file
 #   CLUSTER_METRICS_PROJECT_ID  optional project id that receives hourly Aurora DSQL storage/DPU metrics and a wgo.cluster event
 #   SLACK_CLIENT_ID        optional: one Slack app for "Add to Slack" in every project (otherwise each project
 #   SLACK_CLIENT_SECRET    sets it up from its Triggers page in about a minute)
@@ -98,6 +99,7 @@ if [ "$FRONTEND_ONLY" = false ]; then
   [ -n "${DELETION_PROTECTION:-}" ] && overrides+=("DeletionProtection=$DELETION_PROTECTION")
   [ -n "${MCP_ENABLED:-}" ] && overrides+=("EnableMcp=$MCP_ENABLED")
   [ -n "${MAX_RETENTION_DAYS:-}" ] && overrides+=("MaxRetentionDays=$MAX_RETENTION_DAYS")
+  [ -n "${WRITE_BUFFER_SECONDS:-}" ] && overrides+=("WriteBufferSeconds=$WRITE_BUFFER_SECONDS")
   [ -n "${CLUSTER_METRICS_PROJECT_ID:-}" ] && overrides+=("ClusterMetricsProjectId=$CLUSTER_METRICS_PROJECT_ID")
   [ -n "${SLACK_CLIENT_ID:-}" ] && overrides+=("SlackClientId=$SLACK_CLIENT_ID" "SlackClientSecret=${SLACK_CLIENT_SECRET:-}")
   # shellcheck disable=SC2206

@@ -1,6 +1,7 @@
 /**
- * Maintenance jobs against PostgreSQL (own schema): hourly rollups answer long ranges like raw events do,
- * retention deletes old raw data (never before it is rolled up) while rollup-backed views keep working,
+ * Maintenance jobs against PostgreSQL (own schema) and Parquet in a temp directory: hourly rollups answer long
+ * ranges like raw events do, retention deletes old raw data by whole days (never before it is rolled up) while
+ * rollup-backed views keep working,
  * error stacks are stored once per group, and cluster metrics reach the triggers.
  *
  *   DATABASE_URL=postgres://postgres:pw@localhost:55432/postgres npx vitest run test/maintenance.pg.test.ts
@@ -22,9 +23,10 @@ d('maintenance (PostgreSQL)', async () => {
   delete process.env.TRIGGER_FUNCTION; // deliver in-process
   delete process.env.MAX_RETENTION_DAYS;
 
-  const { query, insertRows, closeDb } = await import('../src/lib/db');
+  const { query, closeDb } = await import('../src/lib/db');
+  const { writeRows } = await import('../src/lib/store/write');
+  const { rawQuery } = await import('../src/lib/store/duck');
   const { SCHEMA_STATEMENTS } = await import('../src/lib/schema');
-  const { EVENT_COLUMNS, eventRowValues } = await import('../src/lib/events');
   const { storeErrorStacks } = await import('../src/lib/errorStacks');
   const R = await import('../src/lib/rollups');
   const { runRetention } = await import('../src/lib/retention');
@@ -39,6 +41,9 @@ d('maintenance (PostgreSQL)', async () => {
   const thisHour = R.floorHour(now);
   let pid = '';
   const RAW = JSON.stringify([{ field: 'type', op: 'set' }]); // any filter forces the raw path
+  /** SQL over all of the project's raw files */
+  const raw = <T,>(sql: string, params: unknown[] = []) => rawQuery<T>(pid, { from: new Date(0), to: new Date(now + DAY) }, sql, params);
+  const floorDay = (t: number) => Math.floor(t / DAY) * DAY;
 
   const row = (o: Partial<EventRow> & Pick<EventRow, 'ts' | 'type'>): EventRow => ({
     project_id: pid, id: randomUUID(), session_id: null, anon_id: null, user_id: null, url: 'https://shop.test/', path: '/',
@@ -83,7 +88,7 @@ d('maintenance (PostgreSQL)', async () => {
     // stored before error_stacks existed: the stack lives on the row
     rows.push(row({ session_id: 's-old', ts: new Date(thisHour - 30 * HOUR), type: 'error', error_message: 'Old', fingerprint: 'fp-legacy', error_stack: 'Error: Old\n    at legacy.js:2:2' }));
     await storeErrorStacks(rows.filter((r) => r.fingerprint === 'fp-new'));
-    await insertRows('events', EVENT_COLUMNS, rows.map((r) => eventRowValues(r.fingerprint === 'fp-new' ? { ...r, error_stack: null } : r)), { props: '::jsonb' });
+    await writeRows('events', rows.map((r) => (r.fingerprint === 'fp-new' ? { ...r, error_stack: null } : r)));
   });
 
   afterAll(async () => {
@@ -138,14 +143,14 @@ d('maintenance (PostgreSQL)', async () => {
     const { summary } = await import('../src/lib/widget');
     const res = await summary({ id: pid, name: 'Shop' }, { range: '7d', stats: 'pageviews,sessions,users,top_page,top_country' });
     const stat = (k: string) => res.stats.find((s) => s.key === k)!;
-    const [raw] = await query<{ pv: number; s: number; u: number }>(
+    const [totals] = await raw<{ pv: number; s: number; u: number }>(
       `SELECT sum(CASE WHEN type = 'pageview' THEN 1 ELSE 0 END)::int AS pv, count(DISTINCT session_id)::int AS s, count(DISTINCT anon_id)::int AS u
          FROM events WHERE project_id = $1 AND bot IS NULL`, [pid]);
-    expect(stat('pageviews').value).toBe(raw.pv); // all data lies within the last 5 days
+    expect(stat('pageviews').value).toBe(totals.pv); // all data lies within the last 5 days
     expect(stat('pageviews').previous).toBe(0);
-    expect(stat('pageviews').series.reduce((a, b) => a + b, 0)).toBe(raw.pv);
-    expect(Math.abs(stat('sessions').value! - raw.s) / raw.s).toBeLessThan(0.03);
-    expect(Math.abs(stat('users').value! - raw.u)).toBeLessThanOrEqual(1);
+    expect(stat('pageviews').series.reduce((a, b) => a + b, 0)).toBe(totals.pv);
+    expect(Math.abs(stat('sessions').value! - totals.s) / totals.s).toBeLessThan(0.03);
+    expect(Math.abs(stat('users').value! - totals.u)).toBeLessThanOrEqual(1);
     expect(stat('top_page').text).toBe('/p0');
     expect(stat('top_country').text).toBe('SE');
   });
@@ -154,7 +159,7 @@ d('maintenance (PostgreSQL)', async () => {
     const groups = await A.errors(pid, { from: new Date(thisHour - 5 * DAY).toISOString(), to: range.to });
     expect(groups.find((g) => g.fingerprint === 'fp-new')?.sampleStack).toContain('app.js');
     expect(groups.find((g) => g.fingerprint === 'fp-legacy')?.sampleStack).toContain('legacy.js');
-    const stored = await query<{ error_stack: string | null }>(`SELECT error_stack FROM events WHERE project_id = $1 AND fingerprint = 'fp-new'`, [pid]);
+    const stored = await raw<{ error_stack: string | null }>(`SELECT error_stack FROM events WHERE project_id = $1 AND fingerprint = 'fp-new'`, [pid]);
     expect(stored.every((r) => r.error_stack === null)).toBe(true);
     const evts = await A.events(pid, { from: new Date(thisHour - 5 * DAY).toISOString(), to: range.to, fingerprint: 'fp-new' });
     expect(evts.events[0].errorStack).toContain('app.js');
@@ -165,9 +170,10 @@ d('maintenance (PostgreSQL)', async () => {
     await P.setRetention(OWNER, pid, 2);
     const notRolledBefore = thisHour - 4 * DAY;
     await runRetention(Date.now() + 60_000, notRolledBefore);
-    const [{ n }] = await query<{ n: number }>('SELECT count(*)::int AS n FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3', [pid, new Date(notRolledBefore), new Date(now - 2 * DAY)]);
+    const [{ n }] = await raw<{ n: number }>('SELECT count(*)::int AS n FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3', [pid, new Date(notRolledBefore), new Date(now - 2 * DAY)]);
     expect(n).toBeGreaterThan(0);
-    const [{ old }] = await query<{ old: number }>('SELECT count(*)::int AS old FROM events WHERE project_id = $1 AND ts < $2', [pid, new Date(notRolledBefore)]);
+    // whole days go: the day that isn't completely rolled up stays
+    const [{ old }] = await raw<{ old: number }>('SELECT count(*)::int AS old FROM events WHERE project_id = $1 AND ts < $2', [pid, new Date(floorDay(notRolledBefore))]);
     expect(old).toBe(0);
     expect((await A.stats(pid, range)).totals.events).toBe(before.totals.events);
   });
@@ -179,7 +185,7 @@ d('maintenance (PostgreSQL)', async () => {
     const res = await runRetention(Date.now() + 60_000, R.floorHour(now - 5 * 60_000));
     expect(res.done).toBe(true);
     expect(res.deleted.events).toBeGreaterThan(0);
-    const [{ old }] = await query<{ old: number }>('SELECT count(*)::int AS old FROM events WHERE project_id = $1 AND ts < $2', [pid, new Date(now - 2 * DAY - 60_000)]);
+    const [{ old }] = await raw<{ old: number }>('SELECT count(*)::int AS old FROM events WHERE project_id = $1 AND ts < $2', [pid, new Date(floorDay(now - 2 * DAY))]);
     expect(old).toBe(0);
     expect(await query('SELECT 1 FROM error_stacks WHERE project_id = $1', [pid])).toHaveLength(0);
     const after = await A.stats(pid, range);
@@ -194,10 +200,10 @@ d('maintenance (PostgreSQL)', async () => {
 
   it('validates the retention setting', async () => {
     await expect(P.setRetention(OWNER, pid, 0)).rejects.toMatchObject({ status: 400 });
-    await expect(P.setRetention(OWNER, pid, 91)).rejects.toThrow(/between 1 and 90/);
+    await expect(P.setRetention(OWNER, pid, 401)).rejects.toThrow(/between 1 and 400/);
     await expect(P.setRetention(OWNER, pid, 7.5)).rejects.toMatchObject({ status: 400 });
     const p = await P.setRetention(OWNER, pid, 30);
-    expect(p.retention).toEqual({ days: 30, defaultDays: 14, maxDays: 90 });
+    expect(p.retention).toEqual({ days: 30, defaultDays: 90, maxDays: 400 });
   });
 
   it('records cluster metrics and fires triggers on them', async () => {
@@ -214,9 +220,9 @@ d('maintenance (PostgreSQL)', async () => {
     const stats = await reportCluster(now, read);
     expect(read).toHaveBeenCalledWith('abc123', now);
     expect(stats?.storageBytes).toBe(2_500_000_000);
-    const points = await query<{ name: string; value: number }>('SELECT name, value FROM metric_points WHERE project_id = $1 ORDER BY name', [pid]);
+    const points = await raw<{ name: string; value: number }>('SELECT name, value FROM metric_points WHERE project_id = $1 ORDER BY name', [pid]);
     expect(points).toEqual([{ name: 'wgo.dsql.dpu', value: 1234.4 }, { name: 'wgo.dsql.storage_bytes', value: 2_500_000_000 }]);
-    const [evt] = await query<{ props: Record<string, unknown> }>(`SELECT props FROM events WHERE project_id = $1 AND name = 'wgo.cluster'`, [pid]);
+    const [evt] = await raw<{ props: Record<string, unknown> }>(`SELECT props FROM events WHERE project_id = $1 AND name = 'wgo.cluster'`, [pid]);
     expect(evt.props).toMatchObject({ storageGb: 2.5, dpuLastHour: 1234, dpuLast24h: 20000 });
     await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledWith('https://example.com/hook', expect.anything()));
     // hourly

@@ -1,18 +1,19 @@
 import { execute, query } from './db';
 import { getJobState, setJobState } from './jobState';
 import { ROLLUP_RETENTION_DAYS } from './rollups';
+import { deleteExpired } from './store/maintain';
 
 /**
- * Raw data retention. Each project keeps its events, logs, spans and metric points for `retention_days`
- * (default 14), capped by the stack's MaxRetentionDays. Storage is what a self-hosted DSQL bill grows with,
- * so this is the main cost lever. Hourly rollups outlive raw data (ROLLUP_RETENTION_DAYS).
+ * Raw data retention. Each project keeps its events, logs, spans and metric points (Parquet files in the data
+ * bucket) for `retention_days` (default 90), capped by the stack's MaxRetentionDays. Whole days are deleted,
+ * so data lives up to a day longer. Hourly rollups (DSQL) outlive raw data (ROLLUP_RETENTION_DAYS).
  */
-export const DEFAULT_RETENTION_DAYS = 14;
+export const DEFAULT_RETENTION_DAYS = 90;
 const DAY = 86_400_000;
 
 export function maxRetentionDays(): number {
   const n = Math.floor(Number(process.env.MAX_RETENTION_DAYS));
-  return Number.isFinite(n) && n >= 1 ? Math.min(n, 3650) : 90;
+  return Number.isFinite(n) && n >= 1 ? Math.min(n, 3650) : 400;
 }
 
 /** Effective retention: the project's setting (or the default), never above the stack's cap. */
@@ -31,29 +32,6 @@ export async function projectRetention(pid: string): Promise<number> {
 }
 export const forgetRetention = (pid: string) => cache.delete(pid);
 
-/** Tables with raw data, their time column and the rest of their key. Batches stay well below DSQL's 3,000 modified rows (indexes included) and 10 MiB per transaction. */
-const RAW_TABLES = [
-  { table: 'events', time: 'ts', key: 'id', batch: 500 },
-  { table: 'logs', time: 'ts', key: 'id', batch: 250 },
-  { table: 'spans', time: 'start_time', key: 'span_id', batch: 250 },
-  { table: 'metric_points', time: 'ts', key: 'id', batch: 500 },
-] as const;
-
-/** Delete rows of one project older than `cutoff`, batch by batch. Returns rows deleted, or null if the deadline hit first. */
-async function deleteOlder(pid: string, t: { table: string; time: string; key: string; batch: number }, cutoff: Date, deadline: number): Promise<number | null> {
-  let total = 0;
-  for (;;) {
-    if (Date.now() > deadline) return null;
-    const n = await execute(
-      `DELETE FROM ${t.table} WHERE project_id = $1 AND (${t.time}, ${t.key}) IN (
-         SELECT ${t.time}, ${t.key} FROM ${t.table} WHERE project_id = $1 AND ${t.time} < $2 LIMIT ${t.batch})`,
-      [pid, cutoff],
-    );
-    total += n;
-    if (n < t.batch) return total;
-  }
-}
-
 async function deleteSimple(sql: string, params: unknown[], batch: number, deadline: number): Promise<boolean> {
   for (;;) {
     if (Date.now() > deadline) return false;
@@ -71,14 +49,15 @@ export async function runRetention(deadline: number, rolledUntil: number, now = 
   if (last && now - last.getTime() < 20 * 3600_000) return { done: true, deleted };
 
   const projects = await query<{ id: string; retention_days: number | null }>('SELECT id, retention_days FROM projects');
+  const days = new Map(projects.map((p) => [p.id, effectiveRetention(p.retention_days)]));
+  const raw = await deleteExpired(projects.map((p) => p.id), (pid, table) => {
+    const cutoff = now - days.get(pid)! * DAY;
+    return table === 'events' ? Math.min(cutoff, rolledUntil) : cutoff;
+  }, deadline);
+  Object.assign(deleted, raw.deleted);
+  if (!raw.done) return { done: false, deleted };
   for (const p of projects) {
-    const cutoff = now - effectiveRetention(p.retention_days) * DAY;
-    for (const t of RAW_TABLES) {
-      const c = new Date(t.table === 'events' ? Math.min(cutoff, rolledUntil) : cutoff);
-      const n = await deleteOlder(p.id, t, c, deadline);
-      if (n === null) return { done: false, deleted };
-      if (n) deleted[t.table] = (deleted[t.table] ?? 0) + n;
-    }
+    const cutoff = now - days.get(p.id)! * DAY;
     // error stacks are refreshed while their group keeps occurring, so a stale one has no events left
     const stacksDone = await deleteSimple(
       `DELETE FROM error_stacks WHERE project_id = $1 AND fingerprint IN (

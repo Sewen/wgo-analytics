@@ -1,6 +1,6 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2, SQSBatchResponse, SQSEvent } from 'aws-lambda';
 import { gunzipIfNeeded, handleError, header, HttpError, json, rawBody } from '../lib/http';
-import { assignStableIds, decodeOtlp, evaluateOtlpTriggers, insertOtlpRows, isProtobuf, isSignal, writeKeyFrom, type OtlpRow, type Signal } from '../lib/otlp/ingest';
+import { assignStableIds, decodeOtlp, evaluateOtlpTriggers, isProtobuf, isSignal, storeOtlpRows, writeKeyFrom, type OtlpRow, type Signal } from '../lib/otlp/ingest';
 import { projectIdForWriteKey } from '../lib/projects';
 
 /**
@@ -21,7 +21,7 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const projectId = await projectIdForWriteKey(writeKeyFrom((n) => header(event, n), event.queryStringParameters?.key));
     if (!projectId) return json(401, { error: 'Missing or unknown write key (send header x-wgo-key)' });
     const rows = decodeOtlp(signal, projectId, rawBody(event), protobuf);
-    await insertOtlpRows(signal, rows);
+    await storeOtlpRows(signal, rows);
     await evaluateOtlpTriggers(signal, rows);
     return ok();
   } catch (err) {
@@ -49,9 +49,10 @@ export function parseQueuedRequest(body: string, meta: string | undefined) {
 }
 
 /**
- * Stores queued OTLP requests. Requests that can never be stored (unknown write key or signal, undecodable
- * body) are logged and dropped. Records are inserted per signal; when an insert fails, only the records
- * that went into it are returned for redelivery, and redelivered records reuse their row ids (no duplicates).
+ * Stores queued OTLP requests: each signal of a batch becomes one Parquet file per project and day (the event
+ * source collects messages for up to WriteBufferSeconds). Requests that can never be stored (unknown write key
+ * or signal, undecodable body) are logged and dropped. When a write fails, only the records that went into it
+ * are returned for redelivery; redelivered records reuse their row ids, so compaction drops the duplicates.
  */
 export async function queueHandler(event: SQSEvent): Promise<SQSBatchResponse> {
   const groups = new Map<Signal, { rows: OtlpRow[]; messageIds: string[] }>();
@@ -83,7 +84,7 @@ export async function queueHandler(event: SQSEvent): Promise<SQSBatchResponse> {
   await Promise.all(
     [...groups].map(async ([signal, group]) => {
       try {
-        await insertOtlpRows(signal, group.rows);
+        await storeOtlpRows(signal, group.rows);
       } catch (err) {
         console.error(`storing ${signal} failed`, err);
         failed.push(...group.messageIds);

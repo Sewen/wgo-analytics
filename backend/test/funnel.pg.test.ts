@@ -18,9 +18,10 @@ d('goal funnels (PostgreSQL)', async () => {
   url.searchParams.set('options', `-c search_path=${SCHEMA}`);
   process.env.DATABASE_URL = url.toString();
 
-  const { query, insertRows, closeDb } = await import('../src/lib/db');
+  const { query, closeDb } = await import('../src/lib/db');
+  const { writeRows } = await import('../src/lib/store/write');
   const { SCHEMA_STATEMENTS } = await import('../src/lib/schema');
-  const { EVENT_COLUMNS, eventRowValues, normalizeBatch } = await import('../src/lib/events');
+  const { normalizeBatch } = await import('../src/lib/events');
   const G = await import('../src/lib/goals');
   const { goalFunnel } = await import('../src/lib/funnel');
 
@@ -68,10 +69,11 @@ d('goal funnels (PostgreSQL)', async () => {
     rows.push(...session(chrome, [pv('/signup'), pv('/pricing'), done]));
     // a crawler that does it all: left out unless bots=1
     rows.push(...session(googlebot, [pv('/pricing'), pv('/signup'), done]));
-    await insertRows('events', EVENT_COLUMNS, rows.map(eventRowValues), { props: '::jsonb' });
+    await writeRows('events', rows);
 
     // normalizeBatch puts custom names in `name` only when d.name is set; check the fixture reads as intended
-    const [{ c }] = await query<{ c: number }>(`SELECT count(*)::int AS c FROM events WHERE project_id = $1 AND name = 'signup_done'`, [pid]);
+    const { rawQuery } = await import('../src/lib/store/duck');
+    const [{ c }] = await rawQuery<{ c: number }>(pid, { from: new Date(0), to: new Date(Date.now() + 86400e3) }, `SELECT count(*)::int AS c FROM events WHERE project_id = $1 AND name = 'signup_done'`, [pid]);
     expect(c).toBe(34);
 
     goalId = (await G.createGoal(pid, 'me@test.dev', { name: 'Signed up', filters: signedUp, steps })).id;

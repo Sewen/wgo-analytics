@@ -91,10 +91,10 @@ function RetentionCard({ project, owner }: { project: Project; owner: boolean })
         <Button variant="primary" disabled={!owner || value === days || save.isPending}>Save</Button>
       </form>
       <div className="space-y-2 px-4 pb-4 text-[12.5px] leading-relaxed text-muted">
-        <p>Raw data older than this is deleted once a day. The Overview (KPIs, the events chart, top pages and breakdowns) keeps working for longer ranges: it reads hourly aggregates that are kept for 13 months. Clicks, errors, the map, events, logs, traces and metrics only go back as far as the raw data.</p>
+        <p>Raw data older than this is deleted once a day, a whole day at a time. The Overview (KPIs, the events chart, top pages and breakdowns) keeps working for longer ranges: it reads hourly aggregates that are kept for 13 months. Clicks, errors, the map, events, logs, traces and metrics only go back as far as the raw data.</p>
         <div className="flex gap-2.5 rounded-lg border border-line bg-[var(--hl)] px-3 py-2.5">
           <Database size={15} className="mt-0.5 shrink-0 text-accent" />
-          <p><span className="font-medium text-fg">This is the main cost lever when you host WGO yourself.</span> Aurora DSQL bills storage per GB-month, and stored raw data grows with your traffic times this setting: doubling retention roughly doubles what you store. Your deployment allows up to {maxDays} days (the stack's <code className="font-mono text-[11.5px]">MaxRetentionDays</code> parameter).</p>
+          <p><span className="font-medium text-fg">Raw data is stored as compressed Parquet files in S3, in your AWS account.</span> What you store grows with your traffic times this setting, but at S3 prices a long retention stays cheap; queries read only the days they cover. Your deployment allows up to {maxDays} days (the stack's <code className="font-mono text-[11.5px]">MaxRetentionDays</code> parameter).</p>
         </div>
       </div>
     </Card>

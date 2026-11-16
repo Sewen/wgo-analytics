@@ -1,9 +1,12 @@
 import { buildInsert, query } from './db';
 import { Hll } from './hll';
 import { getJobState, setJobState } from './jobState';
+import { rawQuery } from './store/duck';
+import { firstDay } from './store/maintain';
 
 /**
- * Hourly rollups of the events table. Long dashboard ranges (and anything older than a project's raw
+ * Hourly rollups of the events table (Parquet, read through DuckDB), stored in DSQL: a few hundred rows per
+ * project-hour at most, which keeps long ranges fast and cheap. Long dashboard ranges (and anything older than a project's raw
  * retention) read these instead of raw events, so their cost depends on the number of hours, not on traffic.
  *
  * A single watermark (`job_state` 'rollup') marks the end of the last rolled hour for all projects.
@@ -54,12 +57,13 @@ interface SessionRow {
 export async function rollupHour(pid: string, hourMs: number): Promise<void> {
   const hour = new Date(hourMs);
   const end = new Date(hourMs + HOUR);
+  const w = { from: new Date(hourMs - SESSION_LOOKBACK_MS), to: end };
   const [types, pages, sessions, bots] = await Promise.all([
-    query<{ key: string; n: string }>(
+    rawQuery<{ key: string; n: string }>(pid, w,
       `SELECT type AS key, count(*) AS n FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NULL GROUP BY 1`,
       [pid, hour, end],
     ),
-    query<{ key: string; n: string; s: string }>(
+    rawQuery<{ key: string; n: string; s: string }>(pid, w,
       `SELECT path AS key, count(*) AS n, count(DISTINCT session_id) AS s
          FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NULL AND type = 'pageview' AND path IS NOT NULL
         GROUP BY 1 ORDER BY 2 DESC LIMIT ${MAX_KEYS}`,
@@ -67,7 +71,7 @@ export async function rollupHour(pid: string, hourMs: number): Promise<void> {
     ),
     // every session active in the hour; `first` tells whether it started in it. Session attributes are
     // constant within a session, so max() just picks the value. Referrer: external referrer of a pageview.
-    query<SessionRow>(
+    rawQuery<SessionRow>(pid, w,
       `SELECT session_id, max(anon_id) AS anon_id, min(ts) AS first, max(ts) AS last,
               max(browser) AS browser, max(os) AS os, max(device) AS device, max(country) AS country,
               max(CASE WHEN city IS NULL THEN NULL ELSE city || ', ' || COALESCE(country, '?') END) AS city,
@@ -79,7 +83,7 @@ export async function rollupHour(pid: string, hourMs: number): Promise<void> {
       [pid, new Date(hourMs - SESSION_LOOKBACK_MS), end],
     ),
     // excluded traffic, so long ranges can say how many bot sessions they hide without scanning raw events
-    query<{ key: string; s: string }>(
+    rawQuery<{ key: string; s: string }>(pid, w,
       `SELECT bot AS key, count(DISTINCT session_id) AS s FROM events
         WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NOT NULL AND session_id IS NOT NULL GROUP BY 1`,
       [pid, hour, end],
@@ -139,9 +143,12 @@ export async function pool<T>(items: T[], n: number, fn: (item: T) => Promise<vo
  */
 export async function runRollups(deadline: number, now = Date.now()): Promise<{ until: number; caughtUp: boolean; hours: number }> {
   const target = floorHour(now - SETTLE_MS);
-  const projects = await query<{ id: string; first: Date | null }>(
-    `SELECT p.id, (SELECT min(ts) FROM events e WHERE e.project_id = p.id) AS first FROM projects p`,
-  );
+  const ids = await query<{ id: string }>('SELECT id FROM projects');
+  // the first day with stored events (the day's start: rolling up empty hours is cheap)
+  const projects = await Promise.all(ids.map(async ({ id }) => {
+    const day = await firstDay('events', id);
+    return { id, first: day ? new Date(day) : null };
+  }));
   const saved = await getJobState(STATE);
   // first run: start at the oldest stored event, at most BACKFILL_MS back
   const oldest = Math.min(target, ...projects.map((p) => p.first?.getTime() ?? target));
@@ -204,7 +211,7 @@ export async function hourlyTypes(pid: string, plan: Plan): Promise<Array<{ hour
       [pid, plan.roll.from, plan.roll.to],
     ),
     plan.raw
-      ? query<{ hour: Date; key: string; n: string }>(
+      ? rawQuery<{ hour: Date; key: string; n: string }>(pid, plan.raw,
           `SELECT ${HOUR_SQL} AS hour, type AS key, count(*) AS n FROM events
             WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NULL GROUP BY 1, 2`,
           [pid, plan.raw.from, plan.raw.to],
@@ -222,7 +229,7 @@ export async function hourlySketches(pid: string, plan: Plan): Promise<Array<{ h
       [pid, plan.roll.from, plan.roll.to],
     ),
     plan.raw
-      ? query<{ hour: Date; session_id: string | null; anon_id: string | null }>(
+      ? rawQuery<{ hour: Date; session_id: string | null; anon_id: string | null }>(pid, plan.raw,
           `SELECT ${HOUR_SQL} AS hour, session_id, anon_id FROM events
             WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NULL GROUP BY 1, 2, 3`,
           [pid, plan.raw.from, plan.raw.to],

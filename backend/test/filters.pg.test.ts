@@ -21,10 +21,11 @@ d('rich filters (PostgreSQL)', async () => {
   url.searchParams.set('options', `-c search_path=${SCHEMA}`);
   process.env.DATABASE_URL = url.toString();
 
-  const { query, insertRows, closeDb } = await import('../src/lib/db');
+  const { query, closeDb } = await import('../src/lib/db');
+  const { writeRows } = await import('../src/lib/store/write');
   const { SCHEMA_STATEMENTS } = await import('../src/lib/schema');
-  const { EVENT_COLUMNS, eventRowValues, normalizeBatch } = await import('../src/lib/events');
-  const { normalizeLogs, normalizeTraces, LOG_COLUMNS, SPAN_COLUMNS } = await import('../src/lib/otlp/normalize');
+  const { normalizeBatch } = await import('../src/lib/events');
+  const { normalizeLogs, normalizeTraces } = await import('../src/lib/otlp/normalize');
   const A = await import('../src/lib/analytics');
 
   const pid = randomUUID();
@@ -58,7 +59,7 @@ d('rich filters (PostgreSQL)', async () => {
         ev('click', { sel: 'a.docs', tag: 'a', text: 'Read the docs' }, { s: 'sess-b', path: '/docs/getting-started' }),
       ]) as never, now),
     ];
-    await insertRows('events', EVENT_COLUMNS, rows.map(eventRowValues), { props: '::jsonb' });
+    await writeRows('events', rows);
 
     const attrs = (o: Record<string, string | number>) => Object.entries(o).map(([key, v]) => ({ key, value: typeof v === 'number' ? { intValue: String(v) } : { stringValue: v } }));
     const ns = (ms: number) => String(BigInt(Math.round(ms)) * 1_000_000n);
@@ -67,7 +68,7 @@ d('rich filters (PostgreSQL)', async () => {
       { timeUnixNano: ns(now - 30_000), severityNumber: 17, body: { stringValue: 'payment failed' }, attributes: attrs({ 'http.route': '/orders', 'order.total': 120 }) },
       { timeUnixNano: ns(now - 20_000), severityNumber: 9, body: { stringValue: 'all good' }, attributes: attrs({ 'http.route': '/health' }) },
     ] }] }] });
-    await insertRows('logs', LOG_COLUMNS, logs.map((r) => LOG_COLUMNS.map((c) => (c === 'attributes' || c === 'resource' ? JSON.stringify(r[c]) : r[c]))), { attributes: '::jsonb', resource: '::jsonb' });
+    await writeRows('logs', logs);
 
     const span = (traceId: string, spanId: string, name: string, dur: number, a: Record<string, string | number>, parent?: string) =>
       ({ traceId, spanId, parentSpanId: parent, name, kind: 2, startTimeUnixNano: ns(now - 10_000), endTimeUnixNano: ns(now - 10_000 + dur), attributes: attrs(a), status: { code: 0 } });
@@ -76,7 +77,7 @@ d('rich filters (PostgreSQL)', async () => {
       { resource: res('api'), scopeSpans: [{ spans: [span(t1, '1'.repeat(16), 'POST /orders', 800, { 'http.route': '/orders', 'http.status_code': 500 }), span(t2, '2'.repeat(16), 'GET /health', 5, { 'http.route': '/health', 'http.status_code': 200 })] }] },
       { resource: res('db'), scopeSpans: [{ spans: [span(t1, '3'.repeat(16), 'INSERT orders', 300, { 'db.system': 'postgresql' }, '1'.repeat(16))] }] },
     ] });
-    await insertRows('spans', SPAN_COLUMNS, spans.map((r) => SPAN_COLUMNS.map((c) => (['attributes', 'resource', 'events'].includes(c) ? JSON.stringify(r[c]) : r[c]))), { attributes: '::jsonb', resource: '::jsonb', events: '::jsonb' });
+    await writeRows('spans', spans);
   });
 
   afterAll(async () => {

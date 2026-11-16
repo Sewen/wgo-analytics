@@ -19,9 +19,10 @@ d('triggers (PostgreSQL)', async () => {
   process.env.DATABASE_URL = url.toString();
   delete process.env.TRIGGER_FUNCTION; // deliver in-process instead of invoking a Lambda
 
-  const { query, insertRows, closeDb } = await import('../src/lib/db');
+  const { query, closeDb } = await import('../src/lib/db');
+  const { writeRows } = await import('../src/lib/store/write');
   const { SCHEMA_STATEMENTS } = await import('../src/lib/schema');
-  const { EVENT_COLUMNS, eventRowValues, normalizeBatch, toApiEvent } = await import('../src/lib/events');
+  const { normalizeBatch, toApiEvent } = await import('../src/lib/events');
   const T = await import('../src/lib/triggers');
   const A = await import('../src/lib/analytics');
   const { matchesAll } = await import('../src/lib/filterMatch');
@@ -162,7 +163,7 @@ d('triggers (PostgreSQL)', async () => {
       ]),
       ...batch([{ t: 'click', d: { sel: 'a.docs', tag: 'a', text: 'Docs' }, path: '/docs/a' }], 'Mozilla/5.0 (X11; Linux x86_64; rv:132.0) Gecko/20100101 Firefox/132.0'),
     ];
-    await insertRows('events', EVENT_COLUMNS, rows.map(eventRowValues), { props: '::jsonb' });
+    await writeRows('events', rows);
     const all = rows.map(toApiEvent);
     const cases: Filter[][] = [
       [{ field: 'type', op: 'eq', value: 'click' }],
@@ -190,7 +191,7 @@ d('triggers (PostgreSQL)', async () => {
   });
 
   it('fires log triggers from OTLP ingest, and matches logs in memory exactly as SQL does', async () => {
-    const { decodeOtlp, insertOtlpRows, evaluateOtlpTriggers } = await import('../src/lib/otlp/ingest');
+    const { decodeOtlp, storeOtlpRows, evaluateOtlpTriggers } = await import('../src/lib/otlp/ingest');
     const nanos = (ms: number) => String(BigInt(ms) * 1_000_000n);
     const attr = (key: string, v: string | number) => ({ key, value: typeof v === 'number' ? { intValue: v } : { stringValue: v } });
     const payload = {
@@ -217,7 +218,7 @@ d('triggers (PostgreSQL)', async () => {
 
     sent.length = 0;
     const rows = decodeOtlp('logs', pid, Buffer.from(JSON.stringify(payload)), false);
-    await insertOtlpRows('logs', rows);
+    await storeOtlpRows('logs', rows);
     await evaluateOtlpTriggers('logs', rows);
     await vi.waitFor(() => expect(sent.filter((x) => x.url === 'https://example.com/logs-hook')).toHaveLength(1));
     await settle();

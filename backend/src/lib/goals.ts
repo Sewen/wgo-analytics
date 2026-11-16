@@ -4,6 +4,7 @@ import { parseRange } from './analytics';
 import { query } from './db';
 import { filterSql, filtersFrom, parseFilters } from './filters';
 import { HttpError } from './http';
+import { rawQuery } from './store/duck';
 
 /**
  * Conversion goals: any kind of event, described with filters, counted as a conversion. A session converts when it
@@ -110,7 +111,7 @@ export async function conversions(pid: string, p: Record<string, string | undefi
   const withSeries = p.series !== '0' && p.series !== 'false';
 
   const allParams: unknown[] = [pid, r.from, r.to];
-  const all = query<{ sessions: number; users: number }>(
+  const all = rawQuery<{ sessions: number; users: number }>(pid, r,
     `SELECT count(DISTINCT session_id)::int AS sessions, count(DISTINCT anon_id)::int AS users
        FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3${filtersFrom(p, 'events', allParams)}`,
     allParams,
@@ -121,7 +122,7 @@ export async function conversions(pid: string, p: Record<string, string | undefi
   }
 
   const totParams: unknown[] = [pid, r.from, r.to];
-  const totals = query<{ i: number; conversions: number; sessions: number; users: number }>(
+  const totals = rawQuery<{ i: number; conversions: number; sessions: number; users: number }>(pid, r,
     `SELECT goal.i AS i, count(*)::int AS conversions, count(DISTINCT session_id)::int AS sessions, count(DISTINCT anon_id)::int AS users
        ${matchedEvents(goals, totParams, filtersFrom(p, 'events', totParams))}
       GROUP BY goal.i`,
@@ -130,8 +131,8 @@ export async function conversions(pid: string, p: Record<string, string | undefi
   const step = (r.to.getTime() - r.from.getTime()) / 1000 / SPARK_BUCKETS;
   const sparkParams: unknown[] = [pid, r.from, r.to, step];
   const spark = withSeries
-    ? query<{ i: number; b: number; n: number }>(
-      `SELECT goal.i AS i, floor(extract(epoch from (ts - $2::timestamptz)) / $4::numeric)::int AS b, count(*)::int AS n
+    ? rawQuery<{ i: number; b: number; n: number }>(pid, r,
+      `SELECT goal.i AS i, floor(extract(epoch from (ts - $2::TIMESTAMP)) / $4::double)::int AS b, count(*)::int AS n
          ${matchedEvents(goals, sparkParams, filtersFrom(p, 'events', sparkParams))}
         GROUP BY 1, 2`,
       sparkParams,

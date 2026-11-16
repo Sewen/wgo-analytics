@@ -1,9 +1,9 @@
 import { randomUUID } from 'node:crypto';
 import { CloudWatchClient, GetMetricDataCommand, ListMetricsCommand, type Dimension } from '@aws-sdk/client-cloudwatch';
-import { insertRows } from './db';
-import { EVENT_COLUMNS, eventRowValues, toApiEvent, type EventRow } from './events';
+import { toApiEvent, type EventRow } from './events';
 import { getJobState, setJobState } from './jobState';
-import { METRIC_COLUMNS, type MetricRow } from './otlp/normalize';
+import type { MetricRow } from './otlp/normalize';
+import { writeRows } from './store/write';
 import { evaluateTriggers } from './triggers';
 
 /**
@@ -70,7 +70,7 @@ export async function reportCluster(now = Date.now(), read = readClusterStats): 
   const points: MetricRow[] = [];
   if (stats.storageBytes !== null) points.push(metric('wgo.dsql.storage_bytes', 'gauge', 'By', 'Aurora DSQL cluster storage size', stats.storageBytes));
   if (stats.dpuLastHour !== null) points.push(metric('wgo.dsql.dpu', 'sum', '{dpu}', 'Aurora DSQL DPUs used in the last hour', stats.dpuLastHour));
-  if (points.length) await insertRows('metric_points', METRIC_COLUMNS, points.map((p) => METRIC_COLUMNS.map((c) => (c === 'attributes' ? JSON.stringify(p.attributes) : p[c]))), { attributes: '::jsonb' });
+  if (points.length) await writeRows('metric_points', points);
 
   const props: Record<string, unknown> = { clusterId };
   if (stats.storageBytes !== null) {
@@ -86,7 +86,7 @@ export async function reportCluster(now = Date.now(), read = readClusterStats): 
     duration_ms: null, name: 'wgo.cluster', props, browser: null, os: null, device: null, country: null, region: null, city: null,
     lat: null, lon: null, bot: null,
   };
-  await insertRows('events', EVENT_COLUMNS, [eventRowValues(row)], { props: '::jsonb' });
+  await writeRows('events', [row]);
   await evaluateTriggers(pid, [toApiEvent(row)]).catch((err) => console.warn('trigger evaluation failed', err));
   await setJobState('cluster', ts);
   return stats;

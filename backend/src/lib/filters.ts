@@ -2,8 +2,8 @@ import type { Filter, FilterOp, FilterScope } from '../contract';
 import { HttpError } from './http';
 
 /**
- * Rich filters → SQL. Everything user-supplied (values, JSON paths) is bound as a parameter;
- * only column names from the fixed registry below are interpolated.
+ * Rich filters → SQL for the raw-data queries (DuckDB, see store/duck.ts). Everything user-supplied (values,
+ * JSON paths) is bound as a parameter; only column names from the fixed registry below are interpolated.
  */
 
 type ColType = 'text' | 'number';
@@ -68,6 +68,9 @@ export function parseFilters(raw: string | undefined): Filter[] {
   });
 }
 
+/** DuckDB JSON path with every key quoted: `$."props"."plan"`, `$."http.route"`. */
+export const jsonPath = (keys: string[]) => '$' + keys.map((k) => `."${k.replace(/["\\]/g, (c) => '\\' + c)}"`).join('');
+
 /** Resolve a field to a SQL expression (+ its params) or reject it. */
 function expression(scope: FilterScope, field: string, bind: (v: unknown) => string): { sql: string; type: ColType | 'json' } {
   const c = COLUMNS[scope][field];
@@ -77,7 +80,7 @@ function expression(scope: FilterScope, field: string, bind: (v: unknown) => str
   const rest = dot > 0 ? field.slice(dot + 1) : '';
   if (!prefix || !rest) throw new HttpError(400, `Unknown field for ${scope}: ${field}`);
   const path = prefix.nested ? rest.split('.').filter(Boolean) : [rest];
-  return { sql: `(${prefix.column} #>> ${bind(path)}::text[])`, type: 'json' };
+  return { sql: `json_extract_string(${prefix.column}, ${bind(jsonPath(path))})`, type: 'json' };
 }
 
 /** SQL expression for one field, binding any JSON path into `params` (used for value suggestions). */
@@ -104,20 +107,20 @@ export function filterSql(filters: Filter[], scope: FilterScope, params: unknown
     const text = e.type === 'number' ? `(${e.sql})::text` : e.sql;
     const isNumber = NUMERIC.test(value);
     // numeric view: json values only when they look like numbers, so a stray string never breaks the cast
-    const num = e.type === 'number' ? e.sql : `(CASE WHEN ${e.sql} ~ '^\\s*-?[0-9]+(\\.[0-9]+)?\\s*$' THEN (${e.sql})::numeric END)`;
+    const num = e.type === 'number' ? e.sql : `(CASE WHEN ${e.sql} ~ '^\\s*-?[0-9]+(\\.[0-9]+)?\\s*$' THEN (${e.sql})::double END)`;
     switch (op) {
       case 'eq':
         return e.type === 'number' ? (isNumber ? `${e.sql} = ${bind(Number(value))}` : 'false') : `${text} = ${bind(value)}`;
       case 'neq':
         return e.type === 'number' ? (isNumber ? `${e.sql} IS DISTINCT FROM ${bind(Number(value))}` : 'true') : `${text} IS DISTINCT FROM ${bind(value)}`;
       case 'contains':
-        return `${text} ILIKE ${bind(like(value, '%', '%'))}`;
+        return `${text} ILIKE ${bind(like(value, '%', '%'))} ESCAPE '\\'`;
       case 'not_contains':
-        return `(${text} IS NULL OR ${text} NOT ILIKE ${bind(like(value, '%', '%'))})`;
+        return `(${text} IS NULL OR ${text} NOT ILIKE ${bind(like(value, '%', '%'))} ESCAPE '\\')`;
       case 'starts_with':
-        return `${text} ILIKE ${bind(like(value, '', '%'))}`;
+        return `${text} ILIKE ${bind(like(value, '', '%'))} ESCAPE '\\'`;
       case 'ends_with':
-        return `${text} ILIKE ${bind(like(value, '%', ''))}`;
+        return `${text} ILIKE ${bind(like(value, '%', ''))} ESCAPE '\\'`;
       case 'gt':
       case 'gte':
       case 'lt':

@@ -18,7 +18,7 @@ function load(email: string): Db {
   if (!empty) db.members.prj_demo = [{ email, role: 'owner', createdAt: db.projects[0].createdAt }, { email: 'sam@acme.dev', role: 'member', createdAt: new Date(Date.now() - 9 * 86400e3).toISOString() }];
   return db;
 }
-const RETENTION = { days: 14, defaultDays: 14, maxDays: 90 };
+const RETENTION = { days: 90, defaultDays: 90, maxDays: 400 };
 const save = (db: Db) => localStorage.setItem(KEY, JSON.stringify(db));
 
 export class MockHttpError extends Error { constructor(public status: number, m: string) { super(m); } }

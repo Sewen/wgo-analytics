@@ -35,8 +35,8 @@ export interface Project {
   writeKey: string; // public key used by the SDK and OTLP exporters
   role: Role; // caller's role
   createdAt: string;
-  // raw events, logs, spans and metric points older than `days` are deleted daily; hourly Overview
-  // rollups are kept 400 days. maxDays is the stack's MaxRetentionDays.
+  // raw events, logs, spans and metric points (Parquet files in S3) older than `days` are deleted daily, a whole
+  // day at a time; hourly Overview rollups are kept 400 days. maxDays is the stack's MaxRetentionDays.
   retention: { days: number; defaultDays: number; maxDays: number };
 }
 
@@ -476,7 +476,9 @@ export interface TraceSummary {
   services: string[];
 }
 
-// GET /api/projects/{pid}/traces/{traceId}  -> { spans: Span[] }  (sorted by start)
+// GET /api/projects/{pid}/traces/{traceId}?at=  -> { spans: Span[] }  (sorted by start)
+//   `at`: optional ISO time within the trace (its start, a log record's time). Spans are stored per day: with it,
+//   the lookup reads that day first; without, the last two days, then everything still stored.
 export interface TraceResponse {
   spans: Span[];
 }

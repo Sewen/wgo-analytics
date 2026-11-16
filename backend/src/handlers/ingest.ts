@@ -1,11 +1,11 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2 } from 'aws-lambda';
-import { insertRows } from '../lib/db';
-import { EVENT_COLUMNS, eventRowValues, normalizeBatch, toApiEvent, type WireBatch } from '../lib/events';
+import { normalizeBatch, toApiEvent, type WireBatch } from '../lib/events';
 import { handleError, header, json, jsonBody } from '../lib/http';
 import { storeErrorStacks } from '../lib/errorStacks';
 import { geoFromHeaders } from '../lib/geo';
 import { fanOut } from '../lib/live';
 import { projectIdForWriteKey } from '../lib/projects';
+import { storeEvents } from '../lib/store/queue';
 import { evaluateTriggers } from '../lib/triggers';
 
 /** POST /ingest — SDK batches. Write key travels in the body (sendBeacon can't set headers). */
@@ -25,8 +25,9 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
     const live = fanOut(projectId, apiEvents).catch((err) => console.warn('fan-out failed', err));
     // stacks are stored once per error group (before the events, so a visible error always has one)
     await storeErrorStacks(rows);
-    await insertRows('events', EVENT_COLUMNS, rows.map((r) => eventRowValues({ ...r, error_stack: null })), { props: '::jsonb' });
-    // triggers only after the write succeeded, so a retried batch can't notify twice for events we dropped
+    // queued for the Parquet writer (written directly when there is no queue: dev server, tests)
+    await storeEvents(rows.map((r) => ({ ...r, error_stack: null })));
+    // triggers only after the events are safely queued, so a retried batch can't notify twice for events we dropped
     await Promise.all([live, evaluateTriggers(projectId, apiEvents).catch((err) => console.warn('trigger evaluation failed', err))]);
 
     return json(202, { accepted: rows.length });
