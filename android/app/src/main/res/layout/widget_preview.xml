@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Static sample shown in the launcher's widget picker (Android 12+) -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:background="@drawable/preview_bg" android:orientation="vertical" android:padding="12dp">
+    <LinearLayout android:layout_width="match_parent" android:layout_height="26dp"
+        android:gravity="center_vertical" android:orientation="horizontal">
+        <ImageView android:layout_width="20dp" android:layout_height="20dp" android:src="@drawable/ic_wgo_mark" />
+        <TextView android:layout_width="0dp" android:layout_height="wrap_content" android:layout_weight="1"
+            android:layout_marginStart="8dp" android:text="@string/preview_project" android:textColor="#F0EFEC"
+            android:textSize="13sp" android:textStyle="bold" />
+        <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+            android:text="@string/preview_range" android:textColor="#6C6B7A" android:textSize="10sp" />
+    </LinearLayout>
+    <LinearLayout android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+        android:layout_marginTop="8dp" android:orientation="horizontal">
+        <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1.3"
+            android:background="@drawable/preview_tile" android:orientation="vertical" android:padding="10dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/preview_visitors" android:textColor="#A3A2B0" android:textSize="11sp" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="42" android:textColor="#F0EFEC" android:textSize="24sp" android:textStyle="bold" />
+            <ImageView android:layout_width="match_parent" android:layout_height="0dp" android:layout_weight="1"
+                android:scaleType="fitXY" android:src="@drawable/preview_spark" />
+        </LinearLayout>
+        <LinearLayout android:layout_width="0dp" android:layout_height="match_parent" android:layout_weight="1"
+            android:layout_marginStart="8dp" android:background="@drawable/preview_tile" android:orientation="vertical"
+            android:padding="10dp">
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="@string/preview_errors" android:textColor="#A3A2B0" android:textSize="11sp" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="3" android:textColor="#F0EFEC" android:textSize="24sp" android:textStyle="bold" />
+            <TextView android:layout_width="wrap_content" android:layout_height="wrap_content"
+                android:text="▼ 62%" android:textColor="#34D399" android:textSize="10sp" android:textStyle="bold" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

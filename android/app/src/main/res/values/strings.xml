@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">WGO</string>
+    <string name="widget_name">WGO stats</string>
+    <string name="widget_description">Live stats from your WGO dashboard. Pick what you see.</string>
+    <string name="preview_project">My app</string>
+    <string name="preview_range">Last 24h</string>
+    <string name="preview_visitors">Visitors now</string>
+    <string name="preview_errors">JS errors</string>
+</resources>

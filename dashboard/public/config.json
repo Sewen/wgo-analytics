@@ -1,0 +1,9 @@
+{
+  "apiUrl": "https://abc123.execute-api.eu-west-1.amazonaws.com",
+  "ingestUrl": "https://abc123.execute-api.eu-west-1.amazonaws.com",
+  "wsUrl": "wss://def456.execute-api.eu-west-1.amazonaws.com/live",
+  "sdkUrl": "https://d1example.cloudfront.net/sdk/v1/wgo.js",
+  "region": "eu-west-1",
+  "userPoolId": "eu-west-1_EXAMPLE",
+  "userPoolClientId": "exampleclientid1234567890"
+}

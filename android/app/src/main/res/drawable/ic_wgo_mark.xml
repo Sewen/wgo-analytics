@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The WGO logo mark (dashboard/src/ui/Logo.tsx) -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="32dp" android:height="32dp"
+    android:viewportWidth="32" android:viewportHeight="32">
+    <path
+        android:fillAlpha="0.16"
+        android:pathData="M9,0H23A9,9 0,0 1,32 9V23A9,9 0,0 1,23 32H9A9,9 0,0 1,0 23V9A9,9 0,0 1,9 0Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="32" android:endY="32"
+                android:startColor="#8B7CF6" android:endColor="#22D3EE" />
+        </aapt:attr>
+    </path>
+    <path
+        android:strokeWidth="1" android:strokeAlpha="0.6"
+        android:pathData="M9,0.5H23A8.5,8.5 0,0 1,31.5 9V23A8.5,8.5 0,0 1,23 31.5H9A8.5,8.5 0,0 1,0.5 23V9A8.5,8.5 0,0 1,9 0.5Z">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear" android:startX="0" android:startY="0" android:endX="32" android:endY="32"
+                android:startColor="#8B7CF6" android:endColor="#22D3EE" />
+        </aapt:attr>
+    </path>
+    <path
+        android:strokeWidth="3" android:strokeLineCap="round" android:strokeLineJoin="round"
+        android:pathData="M7,21.5L12.5,14L17.5,18.2L25,9">
+        <aapt:attr name="android:strokeColor">
+            <gradient android:type="linear" android:startX="7" android:startY="21.5" android:endX="25" android:endY="9"
+                android:startColor="#8B7CF6" android:endColor="#22D3EE" />
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#22D3EE" android:pathData="M25,9m-2.2,0a2.2,2.2 0,1 1,4.4 0a2.2,2.2 0,1 1,-4.4 0" />
+</vector>

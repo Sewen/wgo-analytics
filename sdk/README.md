@@ -1,0 +1,157 @@
+# wgo-sdk
+
+Drop-in browser SDK for WGO web analytics. No runtime dependencies; the gzipped script-tag build is under 9 KB.
+
+## Install
+
+### Script tag
+
+```html
+<script src="https://cdn.example.com/wgo.js"
+        data-write-key="wk_..." data-endpoint="https://api.example.com" async></script>
+```
+
+The script auto-initialises from its own tag and exposes `window.WGO`. Supported attributes:
+
+| Attribute | Meaning |
+| --- | --- |
+| `data-write-key` (required) | Your write key |
+| `data-endpoint` (required) | API base URL; events are POSTed to `<endpoint>/ingest` |
+| `data-debug` | Log SDK diagnostics to the console |
+| `data-release` / `data-environment` | Attached to every batch (`ctx.release`, `ctx.env`) |
+| `data-capture-query-params` | Keep query strings in captured URLs |
+| `data-respect-do-not-track` | Disable entirely when the browser sends DNT |
+
+```js
+WGO.track('signup_clicked', { plan: 'pro' })
+```
+
+### npm
+
+```sh
+npm install ./path/to/wgo/sdk   # not on npm yet
+```
+
+```ts
+import { init, track, identify, page, captureException, setContext, flush, shutdown } from 'wgo-sdk'
+
+init({ writeKey: 'wk_...', endpoint: 'https://api.example.com', release: '1.4.0' })
+
+identify('user_42', { plan: 'pro' })   // `u` is attached to all subsequent events
+track('checkout_started', { value: 99 })
+page()                                 // manual pageview (SPA navigation is automatic)
+captureException(err, { orderId: 7 })
+setContext({ tenant: 'acme' })         // merged into every batch's ctx
+await flush()
+shutdown()                             // removes listeners, restores fetch/XHR/history
+```
+
+Importing the package is SSR-safe (nothing touches `window`/`document` until `init`, which is a no-op on the server). Calling `init` twice warns and is ignored.
+
+### Frameworks, tag managers and troubleshooting
+
+The script finds its configuration on any `<script data-write-key data-endpoint>` tag, so it also works
+when a framework or tag manager re-creates the element. Loading it more than once is harmless: all
+copies share one client. If you can't put attributes on the tag, set a global before the script loads:
+
+```html
+<script>window.WGOConfig = { writeKey: 'wk_…', endpoint: 'https://…' }</script>
+```
+
+If nothing shows up, run `WGO.status()` in the browser console. It returns
+`{ initialized, disabled, endpoint, queued }`. When the SDK loads without finding any configuration, it
+logs a `[wgo] loaded but not initialised` warning. Add `data-debug` to the tag to log every send.
+
+## Config
+
+Only `writeKey` and `endpoint` are required.
+
+| Option | Default | Description |
+| --- | --- | --- |
+| `writeKey` | | Write key |
+| `endpoint` | | API base URL (trailing slash ignored) |
+| `autocapture` | all `true` | `{ clicks, errors, http, pageviews, vitals }` |
+| `flushInterval` | `5000` | Max latency (ms) for normal events, measured from the oldest unsent event |
+| `priorityFlushDelay` | `1000` | Max latency once an error, http_error or priority click is queued |
+| `maxBatchSize` | `50` | Events per batch; reaching it flushes |
+| `maxBatchBytes` | `60000` | Max serialized batch size; ~80% queued flushes |
+| `maxQueueSize` | `1000` | Queue cap; oldest events are dropped first |
+| `maxRetries` | `6` | Retries before a batch is dropped (backoff 1s, 2s, 4s ... capped at 60s, with jitter) |
+| `persist` | `true` | Mirror the unsent queue to `localStorage` (`analytico:q:<writeKey>`) |
+| `sessionTimeout` | `1800000` | Inactivity (ms) after which a new session starts |
+| `sampleRate` | `1` | 0..1, decided once per session |
+| `httpIgnore` | `[]` | Strings (substring match) or RegExps of URLs never reported |
+| `captureQueryParams` | `false` | Keep query strings in URLs (privacy default: stripped) |
+| `compress` | `true` | gzip payloads over 1 KB when `CompressionStream` exists (see note) |
+| `beforeSend` | | `(event) => event \| null` to modify or drop events |
+| `respectDoNotTrack` | `false` | Do nothing if the browser sends Do Not Track |
+| `release`, `environment` | | Attached to `ctx` |
+| `debug` | `false` | Console diagnostics |
+| `priorityClicks` | `[]` | CSS selectors; matching clicks use priority latency (for realtime watches) |
+
+**Compression and CORS.** Uncompressed batches are sent as `text/plain;charset=UTF-8`, a CORS simple request (no preflight). Compressed batches use `application/octet-stream`, which browsers preflight cross-origin; the server must answer the `OPTIONS` request, or set `compress: false`. The backend detects gzip by its magic bytes (`1f 8b`). Beacon sends are never compressed.
+
+## Delivery
+
+* One request in flight at a time; batches never exceed `maxBatchSize` / `maxBatchBytes`.
+* The flush deadline is a max latency: new events never postpone it, priority events can only pull it in.
+* When the page is hidden or unloaded, everything is flushed at once via `navigator.sendBeacon` (fallback: `fetch` with `keepalive`), in chunks under 60 KB.
+* 2xx removes the batch. 429, 5xx and network errors retry with backoff; other 4xx drop the batch. Nothing is sent while `navigator.onLine === false`; sending resumes on the `online` event.
+* Identical errors within 5 s are coalesced into one event with a `count`; at most 30 error events per minute.
+* The SDK ignores its own ingest requests in the fetch/XHR interceptors and never throws into the host app.
+
+## Privacy: data attributes
+
+| Attribute | Effect |
+| --- | --- |
+| `data-track="name"` (or `data-wgo="name"`) | Makes the element a click target and sets `name` on its click events (nearest ancestor wins) |
+| `data-wgo-ignore` | Clicks on the element or any descendant are never captured |
+| `data-wgo-mask` | Click text is omitted for the element and its descendants |
+
+Input values are never captured. Click text is also omitted for `input`, `textarea`, `select`, `contenteditable` and password-like elements.
+
+## Wire format
+
+`POST <endpoint>/ingest`, body is JSON (optionally gzipped):
+
+```ts
+interface Batch { k: string /* writeKey */; a: string /* anonymousId */; sentAt: number; ctx: Ctx; e: WireEvent[] }
+interface Ctx { sdk: 'wgo-js/0.1.0'; ua?: string; lang?: string; sw?: number; sh?: number; tz?: string; release?: string; env?: string; [k: string]: unknown }
+interface WireEvent {
+  id: string                // uuid v4
+  t: 'pageview' | 'click' | 'error' | 'http_error' | 'custom' | 'vitals' | 'identify'
+  ts: number                // ms epoch when it happened
+  s: string                 // session id
+  u?: string                // user id, once identified
+  url: string; path: string; title?: string
+  ref?: string              // pageview only
+  d?: Record<string, unknown>
+}
+```
+
+Per-type `d`:
+
+| `t` | `d` |
+| --- | --- |
+| `click` | `{ sel, tag, text?, name?, href?, x, y, vw, vh, rage? }` |
+| `error` | `{ msg, stack?, src?, line?, col?, kind: 'error'\|'rejection'\|'resource'\|'manual', count?, extra? }` |
+| `http_error` | `{ method, url, status /* 0 = network failure */, statusText?, dur, kind: 'fetch'\|'xhr' }` |
+| `custom` | `{ name, props? }` |
+| `vitals` | `{ ttfb?, fcp?, lcp?, cls?, inp?, load? }` (ms, except `cls`) |
+| `identify` | `{ traits? }` |
+
+For SPA navigations `ref` is the previous page URL; for the initial pageview it is `document.referrer`. All URLs have their query string stripped unless `captureQueryParams` is on.
+
+Types are exported from the package (`WireEvent`, `Batch`, `Ctx`, `Config`, ...).
+
+## Development
+
+```sh
+npm install && npm run typecheck && npm test && npm run build
+```
+
+## Pre-rename names
+
+WGO was briefly called Analytico. The old names still work: `window.Analytico`, `window.AnalyticoConfig`,
+`data-analytico`, `data-analytico-ignore`, `data-analytico-mask`, and the `sdk/v1/analytico.js` URL.
+Storage keys keep the `analytico:` prefix, so visitors' ids survive the rename.

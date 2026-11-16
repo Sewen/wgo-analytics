@@ -1,0 +1,7 @@
+.gradle/
+build/
+local.properties
+.idea/
+*.iml
+# release signing: keep a backup outside the repo; losing it means users must uninstall to update
+keystore/

@@ -1,0 +1,42 @@
+{
+  "name": "analytico-backend",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "build": "sam build",
+    "validate": "sam validate --lint",
+    "dev": "tsx dev/server.mts",
+    "test:integration": "DATABASE_URL=${DATABASE_URL:-postgres://postgres:pw@localhost:55432/postgres} vitest run test/*.pg.test.ts",
+    "seed": "tsx dev/seed.mts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-apigatewaymanagementapi": "^3.700.0",
+    "@aws-sdk/client-cloudwatch": "^3.1169.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1169.0",
+    "@aws-sdk/client-dynamodb": "^3.700.0",
+    "@aws-sdk/client-lambda": "^3.1169.0",
+    "@aws-sdk/dsql-signer": "^3.700.0",
+    "@aws-sdk/lib-dynamodb": "^3.700.0",
+    "@modelcontextprotocol/server": "^2.4.0",
+    "aws-jwt-verify": "^5.0.0",
+    "pg": "^8.13.0",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@opentelemetry/api": "^1.10.0",
+    "@opentelemetry/otlp-transformer": "^0.301.2",
+    "@opentelemetry/resources": "^3.1.1",
+    "@opentelemetry/sdk-logs": "^3.1.1",
+    "@opentelemetry/sdk-metrics": "^3.1.1",
+    "@opentelemetry/sdk-trace": "^3.1.1",
+    "@types/aws-lambda": "^8.10.145",
+    "@types/node": "^22.10.0",
+    "@types/pg": "^8.11.10",
+    "esbuild": "^0.25.0",
+    "tsx": "^4.23.15",
+    "typescript": "^5.7.0",
+    "vitest": "^3.0.0"
+  }
+}

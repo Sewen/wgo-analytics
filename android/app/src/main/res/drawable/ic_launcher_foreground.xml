@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp"
+    android:viewportWidth="108" android:viewportHeight="108">
+    <!-- the logo's chart line, centred in the 66dp safe zone -->
+    <group android:translateX="15.6" android:translateY="17.6" android:scaleX="2.4" android:scaleY="2.4">
+        <path
+            android:strokeWidth="3" android:strokeLineCap="round" android:strokeLineJoin="round"
+            android:pathData="M7,21.5L12.5,14L17.5,18.2L25,9">
+            <aapt:attr name="android:strokeColor">
+                <gradient android:type="linear" android:startX="7" android:startY="21.5" android:endX="25" android:endY="9"
+                    android:startColor="#8B7CF6" android:endColor="#22D3EE" />
+            </aapt:attr>
+        </path>
+        <path android:fillColor="#22D3EE" android:pathData="M25,9m-2.4,0a2.4,2.4 0,1 1,4.8 0a2.4,2.4 0,1 1,-4.8 0" />
+    </group>
+</vector>

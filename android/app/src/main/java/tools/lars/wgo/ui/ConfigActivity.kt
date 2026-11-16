@@ -1,0 +1,368 @@
+package tools.lars.wgo.ui
+
+import android.appwidget.AppWidgetManager
+import android.content.Intent
+import android.os.Bundle
+import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.KeyboardArrowDown
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
+import androidx.compose.material3.Text
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateListOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LifecycleEventEffect
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import tools.lars.wgo.data.AccountStore
+import tools.lars.wgo.data.DEFAULT_STATS
+import tools.lars.wgo.data.MAX_STATS
+import tools.lars.wgo.data.ProjectRef
+import tools.lars.wgo.data.RANGES
+import tools.lars.wgo.data.StatOption
+import tools.lars.wgo.data.WgoApi
+import tools.lars.wgo.data.WidgetStat
+import tools.lars.wgo.data.WidgetSummary
+import tools.lars.wgo.widget.Fmt
+import tools.lars.wgo.widget.Scheduler
+import tools.lars.wgo.widget.StatsWidget
+import tools.lars.wgo.widget.WidgetConfig
+import tools.lars.wgo.widget.WidgetData
+import tools.lars.wgo.widget.WidgetStore
+
+/** Widget configuration: shown when a widget is placed, and when its title is tapped. */
+class ConfigActivity : ComponentActivity() {
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        enableEdgeToEdge(SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
+        val appWidgetId = intent?.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, AppWidgetManager.INVALID_APPWIDGET_ID)
+            ?: AppWidgetManager.INVALID_APPWIDGET_ID
+        // backing out of first-time setup must not leave an empty widget behind
+        setResult(RESULT_CANCELED, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId))
+        if (appWidgetId == AppWidgetManager.INVALID_APPWIDGET_ID) {
+            finish()
+            return
+        }
+        setContent {
+            WgoTheme {
+                ConfigScreen(appWidgetId) {
+                    setResult(RESULT_OK, Intent().putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, appWidgetId))
+                    finish()
+                }
+            }
+        }
+    }
+}
+
+private val THEMES = listOf("auto" to "Auto", "dark" to "Dark", "light" to "Light", "system" to "Material You")
+
+@Composable
+private fun ConfigScreen(appWidgetId: Int, onDone: () -> Unit) {
+    val ctx = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var account by remember { mutableStateOf(AccountStore.get(ctx)) }
+    var projects by remember { mutableStateOf<List<ProjectRef>?>(null) }
+    var options by remember { mutableStateOf<List<StatOption>>(emptyList()) }
+    var error by remember { mutableStateOf<String?>(null) }
+    var loaded by remember { mutableStateOf(false) }
+
+    var projectId by remember { mutableStateOf<String?>(null) }
+    var range by remember { mutableStateOf("24h") }
+    val stats = remember { mutableStateListOf<String>() }
+    var theme by remember { mutableStateOf("auto") }
+    var opacity by remember { mutableFloatStateOf(100f) }
+    var preview by remember { mutableStateOf<List<WidgetStat>?>(null) }
+    var previewFor by remember { mutableStateOf("") } // which project/range/stats `preview` was computed for
+    var saving by remember { mutableStateOf(false) }
+
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { account = AccountStore.get(ctx) }
+
+    // existing config (reconfigure) + the user's projects
+    LaunchedEffect(account) {
+        val a = account ?: return@LaunchedEffect
+        if (!loaded) {
+            WidgetStore.glanceId(ctx, appWidgetId)?.let { WidgetStore.config(ctx, it) }?.let { c ->
+                projectId = c.projectId; range = c.range; theme = c.theme; opacity = c.opacity.toFloat()
+                stats.clear(); stats.addAll(c.stats)
+            }
+            if (stats.isEmpty()) stats.addAll(DEFAULT_STATS)
+            loaded = true
+        }
+        runCatching { WgoApi(a).me() }
+            .onSuccess { me ->
+                projects = me.projects
+                if (projectId == null || me.projects.none { it.id == projectId }) projectId = me.projects.firstOrNull()?.id
+                error = null
+            }
+            .onFailure { error = it.message ?: "Couldn't load your projects" }
+    }
+
+    LaunchedEffect(projectId, account) {
+        val a = account ?: return@LaunchedEffect
+        val pid = projectId ?: return@LaunchedEffect
+        runCatching { WgoApi(a).catalog(pid) }.onSuccess { options = it.options }
+    }
+
+    // live preview with real numbers, debounced while the user is picking
+    LaunchedEffect(projectId, range, stats.toList(), account) {
+        val a = account ?: return@LaunchedEffect
+        val pid = projectId ?: return@LaunchedEffect
+        if (stats.isEmpty()) { preview = emptyList(); return@LaunchedEffect }
+        delay(350)
+        val keys = stats.toList()
+        runCatching { WgoApi(a).summary(pid, range, keys) }.onSuccess { preview = it.stats; previewFor = "$pid|$range|$keys" }
+    }
+
+    val labelOf = { key: String -> options.firstOrNull { it.key == key }?.label ?: key.substringAfter(':').replace('_', ' ').replaceFirstChar { it.uppercase() } }
+
+    fun save() {
+        val pid = projectId ?: return
+        val name = projects?.firstOrNull { it.id == pid }?.name ?: ""
+        saving = true
+        scope.launch {
+            val id = WidgetStore.glanceId(ctx, appWidgetId)
+            if (id == null) {
+                Toast.makeText(ctx, "This widget no longer exists", Toast.LENGTH_SHORT).show()
+                onDone()
+                return@launch
+            }
+            WidgetStore.saveConfig(ctx, id, WidgetConfig(pid, name, stats.toList(), range, theme, opacity.toInt()))
+            // show the preview's numbers immediately; the refresh below replaces them within seconds
+            val shown = preview?.takeIf { previewFor == "$pid|$range|${stats.toList()}" }
+            if (shown != null) WidgetStore.updateData(ctx, id) {
+                WidgetData(WidgetSummary(ProjectRef(pid, name), range, "", "", "", shown), System.currentTimeMillis(), refreshing = true)
+            }
+            StatsWidget().update(ctx, id)
+            Scheduler.schedulePeriodic(ctx)
+            Scheduler.refreshNow(ctx, appWidgetId)
+            onDone()
+        }
+    }
+
+    Box(Modifier.fillMaxSize().background(Brand.bg)) {
+        if (account == null) {
+            Column(Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                BrandHeader("Widget setup")
+                Panel {
+                    SectionTitle("Connect WGO first", "Pair this phone with your dashboard, then come back here.")
+                    GradientButton("Open WGO", onClick = { ctx.startActivity(Intent(ctx, MainActivity::class.java)) }, modifier = Modifier.fillMaxWidth())
+                }
+            }
+            return@Box
+        }
+
+        val grouped = options.filter { it.key !in stats }.groupBy { it.category }
+        LazyColumn(
+            Modifier.fillMaxSize().safeDrawingPadding(),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 110.dp),
+            verticalArrangement = Arrangement.spacedBy(14.dp),
+        ) {
+            item { BrandHeader("Widget setup") }
+            error?.let { e -> item { Panel { Text(e, color = Brand.warn, fontSize = 13.5.sp) } } }
+
+            item {
+                Panel {
+                    val list = projects
+                    if (list == null) {
+                        CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = Brand.accent)
+                    } else {
+                        SectionTitle("Project")
+                        ChipFlow(list.map { it.id to it.name }, projectId) { projectId = it }
+                    }
+                    Spacer(Modifier.height(16.dp))
+                    SectionTitle("Time range", "Totals, comparisons and sparklines cover this window")
+                    ChipFlow(RANGES.map { it to it }, range) { range = it }
+                }
+            }
+
+            item {
+                Panel {
+                    SectionTitle("Your stats", "The first one is shown largest. Pick up to $MAX_STATS.")
+                    if (stats.isEmpty()) Text("Add stats from the list below.", color = Brand.faint, fontSize = 13.5.sp)
+                    stats.forEachIndexed { i, key ->
+                        SelectedRow(
+                            index = i, label = labelOf(key), first = i == 0, last = i == stats.lastIndex,
+                            onUp = { stats.add(i - 1, stats.removeAt(i)) },
+                            onDown = { stats.add(i + 1, stats.removeAt(i)) },
+                            onRemove = { stats.removeAt(i) },
+                        )
+                    }
+                }
+            }
+
+            item { Preview(preview, stats.toList(), labelOf) }
+
+            grouped.forEach { (category, opts) ->
+                item(key = "cat-$category") {
+                    Text(category.uppercase(), color = Brand.faint, fontSize = 11.5.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(start = 4.dp, top = 6.dp))
+                }
+                items(opts, key = { it.key }) { opt ->
+                    OptionRow(opt, enabled = stats.size < MAX_STATS) {
+                        if (stats.size < MAX_STATS) stats.add(opt.key)
+                        else Toast.makeText(ctx, "A widget shows at most $MAX_STATS stats", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            if (options.isEmpty()) item {
+                Box(Modifier.fillMaxWidth().padding(20.dp), contentAlignment = Alignment.Center) {
+                    CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = Brand.accent)
+                }
+            }
+
+            item {
+                Panel {
+                    SectionTitle("Appearance")
+                    ChipFlow(THEMES, theme) { theme = it }
+                    Spacer(Modifier.height(14.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Background", color = Brand.muted, fontSize = 13.5.sp, modifier = Modifier.width(96.dp))
+                        Slider(
+                            value = opacity, onValueChange = { opacity = it }, valueRange = 30f..100f, modifier = Modifier.weight(1f),
+                            colors = SliderDefaults.colors(thumbColor = Brand.accent, activeTrackColor = Brand.accent),
+                        )
+                        Text("${opacity.toInt()}%", color = Brand.fg, fontSize = 13.sp, modifier = Modifier.width(44.dp).padding(start = 8.dp))
+                    }
+                }
+            }
+        }
+
+        Box(
+            Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .background(Brand.bg.copy(alpha = 0.94f))
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp, vertical = 14.dp),
+        ) {
+            GradientButton(
+                if (saving) "Saving…" else "Save widget",
+                onClick = ::save,
+                enabled = !saving && projectId != null && stats.isNotEmpty(),
+                modifier = Modifier.fillMaxWidth(),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectedRow(index: Int, label: String, first: Boolean, last: Boolean, onUp: () -> Unit, onDown: () -> Unit, onRemove: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 3.dp).clip(RoundedCornerShape(12.dp)).background(Brand.tile).padding(start = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Box(
+            Modifier.size(22.dp).clip(RoundedCornerShape(11.dp)).background(if (first) Brand.accent else Brand.accent.copy(alpha = 0.18f)),
+            contentAlignment = Alignment.Center,
+        ) { Text("${index + 1}", color = if (first) Color.White else Brand.accent, fontSize = 11.5.sp, fontWeight = FontWeight.Bold) }
+        Spacer(Modifier.width(10.dp))
+        Text(label, color = Brand.fg, fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f))
+        IconButton(onClick = onUp, enabled = !first) { Icon(Icons.Default.KeyboardArrowUp, "Move up", tint = if (first) Brand.faint.copy(alpha = 0.4f) else Brand.muted) }
+        IconButton(onClick = onDown, enabled = !last) { Icon(Icons.Default.KeyboardArrowDown, "Move down", tint = if (last) Brand.faint.copy(alpha = 0.4f) else Brand.muted) }
+        IconButton(onClick = onRemove) { Icon(Icons.Default.Close, "Remove", tint = Brand.muted) }
+    }
+}
+
+@Composable
+private fun OptionRow(opt: StatOption, enabled: Boolean, onAdd: () -> Unit) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(14.dp))
+            .background(Brand.raised)
+            .clickable(onClick = onAdd)
+            .padding(horizontal = 14.dp, vertical = 11.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(opt.label, color = Brand.fg, fontSize = 14.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (opt.description.isNotBlank()) Text(opt.description, color = Brand.faint, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+        Icon(Icons.Default.Add, contentDescription = "Add", tint = if (enabled) Brand.accent else Brand.faint)
+    }
+}
+
+/** A Compose rendition of the widget's tiles, filled with real numbers. */
+@Composable
+private fun Preview(stats: List<WidgetStat>?, keys: List<String>, labelOf: (String) -> String) {
+    Panel {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Preview", color = Brand.fg, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+            if (stats == null) CircularProgressIndicator(Modifier.size(14.dp), strokeWidth = 1.5.dp, color = Brand.accent)
+            else Icon(Icons.Default.Check, contentDescription = null, tint = Brand.good, modifier = Modifier.size(16.dp))
+        }
+        Spacer(Modifier.height(10.dp))
+        val byKey = stats?.associateBy { it.key } ?: emptyMap()
+        keys.chunked(2).forEachIndexed { r, pair ->
+            if (r > 0) Spacer(Modifier.height(8.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                pair.forEach { key ->
+                    val s = byKey[key]
+                    Column(
+                        Modifier.weight(1f).clip(RoundedCornerShape(14.dp)).background(Brand.tile).padding(horizontal = 12.dp, vertical = 10.dp),
+                    ) {
+                        Text(s?.label ?: labelOf(key), color = Brand.muted, fontSize = 11.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                        Text(
+                            s?.let { if (it.unit == "text") Fmt.text(it) else Fmt.value(it) } ?: "…",
+                            color = when (s?.rating) { "good" -> Brand.good; "warn" -> Brand.warn; "bad" -> Brand.bad; else -> Brand.fg },
+                            fontSize = if (r == 0 && key == keys.first()) 22.sp else 18.sp, fontWeight = FontWeight.Bold,
+                            maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                        val d = s?.let { Fmt.delta(it) }
+                        Text(
+                            d?.label ?: " ",
+                            color = when (d?.tone) { Fmt.Tone.GOOD -> Brand.good; Fmt.Tone.BAD -> Brand.bad; else -> Brand.faint },
+                            fontSize = 11.sp, fontWeight = FontWeight.SemiBold,
+                        )
+                    }
+                }
+                if (pair.size == 1) Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+}

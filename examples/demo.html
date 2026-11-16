@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>WGO demo shop</title>
+  <style>
+    :root { color-scheme: dark; --bg: #0b0d12; --card: #141821; --line: #232836; --text: #e7e9ee; --muted: #8b93a7; --accent: #8b5cf6; }
+    * { box-sizing: border-box; }
+    body { margin: 0; font: 15px/1.5 Inter, system-ui, sans-serif; background: var(--bg); color: var(--text); }
+    header { display: flex; align-items: center; gap: 24px; padding: 16px 32px; border-bottom: 1px solid var(--line); }
+    header b { font-size: 18px; }
+    nav a { color: var(--muted); margin-right: 16px; text-decoration: none; }
+    nav a:hover { color: var(--text); }
+    main { max-width: 960px; margin: 32px auto; padding: 0 24px; }
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 14px; padding: 20px; }
+    .card h3 { margin: 0 0 4px; }
+    .price { color: var(--muted); margin-bottom: 16px; }
+    button { font: inherit; padding: 8px 14px; border-radius: 10px; border: 1px solid var(--line); background: #1c2130; color: var(--text); cursor: pointer; }
+    button.primary { background: var(--accent); border-color: transparent; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 24px; }
+    .hint { color: var(--muted); font-size: 13px; }
+    code { background: #1c2130; padding: 2px 6px; border-radius: 6px; }
+    #log { font: 12px ui-monospace, monospace; color: var(--muted); white-space: pre-wrap; margin-top: 24px; }
+  </style>
+</head>
+<body>
+  <header>
+    <b>🛍 Demo Shop</b>
+    <nav>
+      <a href="#/" data-route="/">Home</a>
+      <a href="#/products" data-route="/products">Products</a>
+      <a href="#/checkout" data-route="/checkout">Checkout</a>
+    </nav>
+    <button class="primary" data-track="signup-cta" style="margin-left:auto">Sign up free</button>
+  </header>
+
+  <main>
+    <p class="hint">
+      This page loads the WGO SDK with <code>?key=&lt;write key&gt;</code> and optional <code>&amp;endpoint=&lt;API URL&gt;</code>
+      (defaults to this origin). Click around, then watch the dashboard.
+    </p>
+    <div class="grid">
+      <div class="card"><h3>Aurora Lamp</h3><div class="price">$89</div><button class="add-to-cart" data-track="add-to-cart">Add to cart</button></div>
+      <div class="card"><h3>Nimbus Chair</h3><div class="price">$249</div><button class="add-to-cart" data-track="add-to-cart">Add to cart</button></div>
+      <div class="card"><h3>Orbit Desk</h3><div class="price">$499</div><button class="add-to-cart" data-track="add-to-cart">Add to cart</button></div>
+    </div>
+
+    <div class="row">
+      <button id="buy" class="primary" data-track="checkout">Checkout</button>
+      <button id="boom">Throw an error</button>
+      <button id="reject">Unhandled rejection</button>
+      <button id="api404">API call → 404</button>
+      <button id="api500">API call → 500</button>
+      <button id="netfail">Network failure</button>
+      <button id="custom">Track custom event</button>
+      <button data-wgo-ignore>Ignored button</button>
+    </div>
+    <div class="row" data-wgo-mask>
+      <button id="secret">Masked: account #4242</button>
+    </div>
+    <div id="log"></div>
+  </main>
+
+  <script>
+    const params = new URLSearchParams(location.search);
+    const key = params.get('key');
+    const endpoint = params.get('endpoint') || location.origin;
+    const log = (m) => (document.getElementById('log').textContent += m + '\n');
+
+    if (!key) {
+      log('Missing ?key=<write key> — the SDK is not loaded.');
+    } else {
+      const s = document.createElement('script');
+      s.src = params.get('sdk') || '/sdk/dist/wgo.js';
+      s.onload = () => {
+        WGO.init({ writeKey: key, endpoint, debug: true, release: 'demo-1.0', priorityClicks: ['[data-track="checkout"]'] });
+        log('SDK loaded → ' + endpoint);
+        if (params.get('auto')) autopilot();
+      };
+      document.head.appendChild(s);
+    }
+
+    // SPA-style navigation (exercises pageview capture via history.pushState)
+    document.querySelectorAll('[data-route]').forEach((a) =>
+      a.addEventListener('click', (e) => { e.preventDefault(); history.pushState({}, '', a.dataset.route + location.search); }),
+    );
+
+    const apiBase = endpoint.replace(/\/$/, '');
+    document.getElementById('boom').onclick = () => { setTimeout(() => { undefinedFunctionCall(); }); };
+    document.getElementById('reject').onclick = () => { Promise.reject(new Error('Payment provider timed out')); };
+    document.getElementById('api404').onclick = () => fetch(apiBase + '/api-demo/orders/12345').catch(() => {});
+    document.getElementById('api500').onclick = () => {
+      const x = new XMLHttpRequest(); x.open('POST', apiBase + '/api-demo/checkout/9f8e7d6c'); x.send('{}');
+    };
+    document.getElementById('netfail').onclick = () => fetch('http://127.0.0.1:9/unreachable').catch(() => {});
+    document.getElementById('custom').onclick = () => WGO.track('newsletter_subscribed', { plan: 'weekly' });
+
+    // ?auto=1 drives the page by itself (used for end-to-end tests and demos)
+    async function autopilot() {
+      const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+      const click = (el) => el.dispatchEvent(new MouseEvent('click', { bubbles: true, clientX: 100, clientY: 100 }));
+      document.querySelector('[data-route="/products"]').click();
+      for (const b of document.querySelectorAll('.add-to-cart')) { click(b); await sleep(50); }
+      for (let i = 0; i < 4; i++) click(document.getElementById('buy')); // rage click
+      click(document.querySelector('[data-track="signup-cta"]'));
+      click(document.getElementById('secret'));
+      click(document.querySelector('[data-wgo-ignore]'));
+      click(document.getElementById('custom'));
+      click(document.getElementById('api404'));
+      click(document.getElementById('api500'));
+      click(document.getElementById('boom'));
+      await sleep(500);
+      await WGO.flush();
+      log('AUTOPILOT DONE');
+      document.title = 'done';
+    }
+  </script>
+</body>
+</html>

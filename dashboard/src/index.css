@@ -1,0 +1,177 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --color-bg: var(--bg);
+  --color-surface: var(--surface);
+  --color-raised: var(--raised);
+  --color-line: var(--line);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-faint: var(--faint);
+  --color-accent: var(--accent);
+  --color-accent2: var(--accent2);
+  --color-good: var(--good);
+  --color-warn: var(--warn);
+  --color-bad: var(--bad);
+  --color-s1: var(--s1);
+  --color-s2: var(--s2);
+  --color-s3: var(--s3);
+  --color-s7: var(--s7);
+  --color-s8: var(--s8);
+}
+
+:root, [data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0a0a0f;
+  --surface: rgba(255,255,255,0.035);
+  --raised: #14141c;
+  --line: rgba(255,255,255,0.08);
+  --line-strong: rgba(255,255,255,0.16);
+  --fg: #f0efec;
+  --muted: #a3a2b0;
+  --faint: #6c6b7a;
+  --accent: #8b7cf6;
+  --accent2: #22d3ee;
+  --good: #34d399;
+  --warn: #fbbf24;
+  --bad: #f87171;
+  --hl: rgba(255,255,255,0.06);
+  --glow1: rgba(139,124,246,0.20);
+  --glow2: rgba(34,211,238,0.12);
+  --grid: rgba(255,255,255,0.035);
+  --shadow: 0 10px 40px -10px rgba(0,0,0,0.6);
+  --inner: inset 0 1px 0 rgba(255,255,255,0.05);
+  --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+  --s5: #d55181; --s6: #0ca30c; --s7: #9085e9; --s8: #e66767;
+}
+[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f6f6f8;
+  --surface: rgba(255,255,255,0.75);
+  --raised: #ffffff;
+  --line: rgba(15,15,30,0.09);
+  --line-strong: rgba(15,15,30,0.18);
+  --fg: #0e0e14;
+  --muted: #52514e;
+  --faint: #8a8996;
+  --accent: #6250d6;
+  --accent2: #0891b2;
+  --good: #059669;
+  --warn: #b45309;
+  --bad: #dc2626;
+  --hl: rgba(15,15,30,0.05);
+  --glow1: rgba(98,80,214,0.14);
+  --glow2: rgba(8,145,178,0.10);
+  --grid: rgba(15,15,30,0.05);
+  --shadow: 0 10px 30px -12px rgba(30,30,60,0.25);
+  --inner: inset 0 1px 0 rgba(255,255,255,0.9);
+  --s1: #2a78d6; --s2: #eb6834; --s3: #1baf7a; --s4: #eda100;
+  --s5: #e87ba4; --s6: #008300; --s7: #6250d6; --s8: #e34948;
+}
+
+html, body, #root { height: 100%; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--fg);
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  -webkit-font-smoothing: antialiased;
+  font-feature-settings: "cv11", "ss01";
+}
+.tnum, table, .kpi { font-variant-numeric: tabular-nums; }
+* { scrollbar-width: thin; scrollbar-color: var(--line-strong) transparent; }
+::selection { background: color-mix(in srgb, var(--accent) 40%, transparent); }
+
+.bg-atmos {
+  background:
+    radial-gradient(900px 480px at 15% -10%, var(--glow1), transparent 70%),
+    radial-gradient(700px 400px at 95% 0%, var(--glow2), transparent 70%),
+    linear-gradient(var(--grid) 1px, transparent 1px) 0 0 / 40px 40px,
+    linear-gradient(90deg, var(--grid) 1px, transparent 1px) 0 0 / 40px 40px,
+    var(--bg);
+}
+
+.glass {
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  box-shadow: var(--inner), 0 1px 2px rgba(0,0,0,0.15);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+}
+.glass-hover { transition: border-color .18s, background .18s, transform .18s; }
+.glass-hover:hover { border-color: var(--line-strong); background: color-mix(in srgb, var(--surface) 70%, var(--hl)); }
+
+.grad-text { background: linear-gradient(90deg, var(--accent), var(--accent2)); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.grad-bg { background: linear-gradient(135deg, #7c6cf0, #22b8d8); }
+
+.skeleton { position: relative; overflow: hidden; background: var(--hl); border-radius: 8px; }
+.skeleton::after { content: ""; position: absolute; inset: 0; transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255,255,255,0.07), transparent); animation: shimmer 1.4s infinite; }
+[data-theme="light"] .skeleton::after { background: linear-gradient(90deg, transparent, rgba(255,255,255,0.8), transparent); }
+@keyframes shimmer { to { transform: translateX(100%); } }
+
+@keyframes slide-in { from { opacity: 0; transform: translateY(-14px); background: color-mix(in srgb, var(--accent) 22%, transparent); } to { opacity: 1; transform: none; } }
+.row-new { animation: slide-in .45s cubic-bezier(.2,.8,.2,1); }
+@keyframes fade-in { from { opacity: 0; } to { opacity: 1; } }
+@keyframes pop-in { from { opacity: 0; transform: translateY(8px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes drawer-in { from { transform: translateX(32px); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes page-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+.page-in { animation: page-in .22s ease-out; }
+.anim-fade { animation: fade-in .18s ease-out; }
+.anim-pop { animation: pop-in .2s cubic-bezier(.2,.8,.2,1); }
+.anim-drawer { animation: drawer-in .22s cubic-bezier(.2,.8,.2,1); }
+@keyframes flash { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent2) 70%, transparent); border-color: var(--accent2); } 100% { box-shadow: 0 0 0 14px transparent; } }
+.flash { animation: flash .8s ease-out; }
+@keyframes pulse-dot { 0%,100% { opacity: 1; transform: scale(1); } 50% { opacity: .45; transform: scale(.8); } }
+.pulse-dot { animation: pulse-dot 1.4s ease-in-out infinite; }
+
+
+.tok-k { color: #c084fc; } .tok-s { color: #86efac; } .tok-c { color: #6c6b7a; font-style: italic; } .tok-n { color: #fbbf24; } .tok-t { color: #67e8f9; } .tok-a { color: #93c5fd; }
+[data-theme="light"] .tok-k { color: #7c3aed; } [data-theme="light"] .tok-s { color: #047857; } [data-theme="light"] .tok-n { color: #b45309; } [data-theme="light"] .tok-t { color: #0e7490; } [data-theme="light"] .tok-a { color: #1d4ed8; }
+
+input, select, textarea { color: inherit; }
+.field { background: var(--hl); border: 1px solid var(--line); border-radius: 9px; padding: 7px 11px; outline: none; transition: border-color .15s, box-shadow .15s; width: 100%; }
+.field:focus { border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 22%, transparent); }
+.field::placeholder { color: var(--faint); }
+select.field option { background: var(--raised); color: var(--fg); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation-duration: .001ms !important; animation-iteration-count: 1 !important; transition-duration: .001ms !important; }
+}
+
+/* geo map (MapLibre) */
+.geo-map { background: #0c0c0c; }
+[data-theme='light'] .geo-map { background: #f2f3f0; }
+.geo-map .maplibregl-ctrl-group { background: var(--raised); border: 1px solid var(--line); box-shadow: var(--shadow); border-radius: 10px; overflow: hidden; }
+.geo-map .maplibregl-ctrl-group button + button { border-top: 1px solid var(--line); }
+.geo-map .maplibregl-ctrl-group button:hover { background-color: var(--hl); }
+:root:not([data-theme='light']) .geo-map .maplibregl-ctrl-icon { filter: invert(1) brightness(.85); }
+.geo-map .maplibregl-ctrl-attrib { background: color-mix(in srgb, var(--raised) 80%, transparent); color: var(--faint); font-size: 10.5px; }
+.geo-map .maplibregl-ctrl-attrib a { color: var(--muted); }
+:root:not([data-theme='light']) .geo-map .maplibregl-ctrl-attrib-button { filter: invert(1); }
+.geo-map .maplibregl-cooperative-gesture-screen { font-family: var(--font-sans); font-size: 14px; }
+.geo-pop .maplibregl-popup-content { background: var(--raised); color: var(--fg); border: 1px solid var(--line-strong); border-radius: 10px; padding: 7px 10px; box-shadow: var(--shadow); font-family: var(--font-sans); }
+.geo-pop .maplibregl-popup-tip { display: none; }
+.geo-pop-title { font-size: 12.5px; font-weight: 600; }
+.geo-pop-sub { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.geo-ping { width: 12px; height: 12px; border-radius: 50%; background: currentColor; box-shadow: 0 0 0 2px #0a0a0f, 0 0 14px currentColor; transition: opacity .5s linear; pointer-events: none; }
+.geo-ping-strong { width: 16px; height: 16px; box-shadow: 0 0 0 2px #0a0a0f, 0 0 24px 4px currentColor; }
+.geo-ping::after { content: ''; position: absolute; inset: -3px; border-radius: 50%; border: 2px solid currentColor; animation: geo-ping 1.6s cubic-bezier(.2,.7,.3,1) forwards; }
+@keyframes geo-ping { from { transform: scale(.6); opacity: 1; } to { transform: scale(4); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .geo-ping::after { animation: none; opacity: 0; } }
+.geo-callout-anchor { pointer-events: none; }
+.geo-callout { width: 236px; background: color-mix(in srgb, var(--raised) 94%, transparent); backdrop-filter: blur(8px); border: 1px solid var(--line-strong); border-radius: 10px; padding: 6px 8px 5px; box-shadow: var(--shadow); font-family: var(--font-sans); color: var(--fg); position: relative; animation: pop-in .18s ease-out; }
+.geo-callout::after { content: ''; position: absolute; left: calc(50% + var(--tail-dx, 0px)); bottom: -5px; width: 9px; height: 9px; transform: translateX(-50%) rotate(45deg); background: inherit; border-right: 1px solid var(--line-strong); border-bottom: 1px solid var(--line-strong); }
+.geo-callout-below::after { bottom: auto; top: -5px; transform: translateX(-50%) rotate(225deg); }
+.geo-callout-title { font-size: 11px; font-weight: 600; color: var(--muted); margin-bottom: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.geo-callout-empty { font-size: 11.5px; color: var(--faint); padding: 2px 0 3px; }
+.geo-callout-row { display: flex; align-items: center; gap: 6px; font-size: 11.5px; line-height: 19px; animation: slide-in .35s cubic-bezier(.2,.8,.2,1); }
+.geo-callout-row i { width: 6px; height: 6px; border-radius: 50%; flex: none; }
+.geo-callout-text { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.geo-callout-time { flex: none; color: var(--faint); font-variant-numeric: tabular-nums; font-size: 10.5px; }
+.geo-map .maplibregl-ctrl-attrib.maplibregl-compact, .geo-map .maplibregl-ctrl-attrib.maplibregl-compact-show { background-color: color-mix(in srgb, var(--raised) 85%, transparent); color: var(--faint); }
+.geo-callout-compact { width: 196px; }
