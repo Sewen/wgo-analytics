@@ -28,7 +28,7 @@ function PasswordHints({ value }: { value: string }) {
 }
 
 /** The last choice of the "Keep me signed in" box, so it doesn't reset on every sign-in. */
-const REMEMBER_KEY = 'analytico.remember';
+const REMEMBER_KEY = 'wgo.remember';
 
 const allowedDomains =() => getConfig().allowedEmailDomains ?? [];
 

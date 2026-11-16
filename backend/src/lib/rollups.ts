@@ -29,7 +29,8 @@ export const floorHour = (t: number) => Math.floor(t / HOUR) * HOUR;
 
 export const BREAKDOWN_DIMS = ['browser', 'os', 'device', 'referrer', 'country', 'city'] as const;
 export type BreakdownDim = (typeof BREAKDOWN_DIMS)[number];
-export type RollupDim = 'type' | 'page' | BreakdownDim;
+/** 'bot': key = detection reason, sessions = distinct bot sessions in the hour (the only non-human rows) */
+export type RollupDim = 'type' | 'page' | 'bot' | BreakdownDim;
 /** Key used when a session has no value for a dimension (matches the raw breakdown query). */
 export const MISSING_KEY = (dim: BreakdownDim) => (dim === 'referrer' ? '(direct)' : 'Unknown');
 
@@ -53,14 +54,14 @@ interface SessionRow {
 export async function rollupHour(pid: string, hourMs: number): Promise<void> {
   const hour = new Date(hourMs);
   const end = new Date(hourMs + HOUR);
-  const [types, pages, sessions] = await Promise.all([
+  const [types, pages, sessions, bots] = await Promise.all([
     query<{ key: string; n: string }>(
-      `SELECT type AS key, count(*) AS n FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 GROUP BY 1`,
+      `SELECT type AS key, count(*) AS n FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NULL GROUP BY 1`,
       [pid, hour, end],
     ),
     query<{ key: string; n: string; s: string }>(
       `SELECT path AS key, count(*) AS n, count(DISTINCT session_id) AS s
-         FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND type = 'pageview' AND path IS NOT NULL
+         FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NULL AND type = 'pageview' AND path IS NOT NULL
         GROUP BY 1 ORDER BY 2 DESC LIMIT ${MAX_KEYS}`,
       [pid, hour, end],
     ),
@@ -73,16 +74,23 @@ export async function rollupHour(pid: string, hourMs: number): Promise<void> {
               max(CASE WHEN type = 'pageview' AND referrer IS NOT NULL AND split_part(referrer, '/', 3) <> split_part(url, '/', 3)
                        THEN NULLIF(split_part(referrer, '/', 3), '') END) AS referrer,
               sum(CASE WHEN type = 'pageview' THEN 1 ELSE 0 END) AS pageviews
-         FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND session_id IS NOT NULL
+         FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NULL AND session_id IS NOT NULL
         GROUP BY session_id`,
       [pid, new Date(hourMs - SESSION_LOOKBACK_MS), end],
     ),
+    // excluded traffic, so long ranges can say how many bot sessions they hide without scanning raw events
+    query<{ key: string; s: string }>(
+      `SELECT bot AS key, count(DISTINCT session_id) AS s FROM events
+        WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NOT NULL AND session_id IS NOT NULL GROUP BY 1`,
+      [pid, hour, end],
+    ),
   ]);
-  if (!types.length) return;
+  if (!types.length && !bots.length) return;
 
   const rows: unknown[][] = [];
   for (const t of types) rows.push([pid, 'type', hour, t.key, Number(t.n), 0]);
   for (const p of pages) rows.push([pid, 'page', hour, p.key, Number(p.n), Number(p.s)]);
+  for (const b of bots) rows.push([pid, 'bot', hour, b.key, 0, Number(b.s)]);
 
   const sessionHll = new Hll();
   const userHll = new Hll();
@@ -198,7 +206,7 @@ export async function hourlyTypes(pid: string, plan: Plan): Promise<Array<{ hour
     plan.raw
       ? query<{ hour: Date; key: string; n: string }>(
           `SELECT ${HOUR_SQL} AS hour, type AS key, count(*) AS n FROM events
-            WHERE project_id = $1 AND ts >= $2 AND ts < $3 GROUP BY 1, 2`,
+            WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NULL GROUP BY 1, 2`,
           [pid, plan.raw.from, plan.raw.to],
         )
       : Promise.resolve([]),
@@ -216,7 +224,7 @@ export async function hourlySketches(pid: string, plan: Plan): Promise<Array<{ h
     plan.raw
       ? query<{ hour: Date; session_id: string | null; anon_id: string | null }>(
           `SELECT ${HOUR_SQL} AS hour, session_id, anon_id FROM events
-            WHERE project_id = $1 AND ts >= $2 AND ts < $3 GROUP BY 1, 2, 3`,
+            WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NULL GROUP BY 1, 2, 3`,
           [pid, plan.raw.from, plan.raw.to],
         )
       : Promise.resolve([]),

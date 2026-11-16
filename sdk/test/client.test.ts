@@ -30,7 +30,7 @@ describe('wire format', () => {
     const b = batchOf(ingestCalls(f)[0])
     expect(Object.keys(b).sort()).toEqual(['a', 'ctx', 'e', 'k', 'sentAt'])
     expect(b.k).toBe('wk_test')
-    expect(b.a).toBe(localStorage.getItem('analytico:aid'))
+    expect(b.a).toBe(localStorage.getItem('wgo:aid'))
     expect(b.sentAt).toBe(Date.now())
     expect(b.ctx).toMatchObject({ sdk: 'wgo-js/0.1.0', release: '1.2.3', env: 'prod', appVersion: 'x' })
     expect(typeof b.ctx.ua).toBe('string')
@@ -47,7 +47,7 @@ describe('wire format', () => {
     expect(pv.u).toBeUndefined() // before identify()
     expect(idt).toMatchObject({ u: 'user-1', d: { traits: { plan: 'pro' } } })
     expect(cu).toMatchObject({ u: 'user-1', d: { name: 'signup', props: { a: 1 } } })
-    expect(localStorage.getItem('analytico:uid')).toBe('user-1')
+    expect(localStorage.getItem('wgo:uid')).toBe('user-1')
   })
 
   it('posts to endpoint/ingest even with a trailing slash', async () => {
@@ -94,7 +94,7 @@ describe('init', () => {
 
   it('restores a persisted queue on init and sends it', async () => {
     const f = mockFetch()
-    localStorage.setItem('analytico:q:wk_test', JSON.stringify([{ id: 'old', t: 'custom', ts: 1, s: 's', url: 'u', path: '/', d: { name: 'old' } }]))
+    localStorage.setItem('wgo:q:wk_test', JSON.stringify([{ id: 'old', t: 'custom', ts: 1, s: 's', url: 'u', path: '/', d: { name: 'old' } }]))
     A.init(cfg({ persist: true }))
     await vi.advanceTimersByTimeAsync(0)
     expect(eventsOf(f).map((e) => e.id)).toEqual(['old'])
@@ -177,7 +177,7 @@ describe('lifecycle flush', () => {
     window.dispatchEvent(new Event('pagehide'))
     Object.defineProperty(navigator, 'onLine', { value: true, configurable: true })
     expect(beacon).not.toHaveBeenCalled()
-    expect(JSON.parse(localStorage.getItem('analytico:q:wk_test')!)).toHaveLength(1)
+    expect(JSON.parse(localStorage.getItem('wgo:q:wk_test')!)).toHaveLength(1)
   })
 })
 

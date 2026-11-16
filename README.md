@@ -331,15 +331,14 @@ The dashboard has a setup guide for Node.js and Python, on servers and AWS Lambd
 **WGO sets no cookies**, neither on your visitors nor in the dashboard. The CloudFront distribution doesn't
 forward cookies to the backend either, so cookies your own site sets on the same domain never reach WGO.
 
-**What the SDK stores in the browser.** The browser SDK uses your site's `localStorage` (keys keep the
-`analytico:` prefix from before the [rename](#upgrading-from-analytico)):
+**What the SDK stores in the browser.** The browser SDK uses your site's `localStorage`:
 
 | Key | Contents | Kept until |
 |---|---|---|
-| `analytico:aid` | A random anonymous visitor id (UUID), so returning visitors are counted once | The visitor clears site data |
-| `analytico:sid` | Session id, time of last activity, and whether this session is sampled | Replaced after 30 minutes of inactivity (`sessionTimeout`) |
-| `analytico:uid` | The user id you pass to `WGO.identify()` | The visitor clears site data. Only set if you call `identify` |
-| `analytico:q:<writeKey>` | Events that haven't been sent yet, e.g. while offline | They are delivered. Turn off with `persist: false` |
+| `wgo:aid` | A random anonymous visitor id (UUID), so returning visitors are counted once | The visitor clears site data |
+| `wgo:sid` | Session id, time of last activity, and whether this session is sampled | Replaced after 30 minutes of inactivity (`sessionTimeout`) |
+| `wgo:uid` | The user id you pass to `WGO.identify()` | The visitor clears site data. Only set if you call `identify` |
+| `wgo:q:<writeKey>` | Events that haven't been sent yet, e.g. while offline | They are delivered. Turn off with `persist: false` |
 
 **What is collected.** With each event: the anonymous id, the session id, the page URL and referrer (query
 strings stripped unless `captureQueryParams` is on), browser, OS and device type (parsed from the user agent,
@@ -358,7 +357,7 @@ privacy for your site. If you need consent first:
 - To honour a withdrawal, stop the SDK and remove what it stored:
   ```js
   WGO.shutdown()
-  Object.keys(localStorage).filter((k) => k.startsWith('analytico:')).forEach((k) => localStorage.removeItem(k))
+  Object.keys(localStorage).filter((k) => k.startsWith('wgo:')).forEach((k) => localStorage.removeItem(k))
   ```
 - `data-respect-do-not-track` (or `respectDoNotTrack: true`) turns the SDK off for browsers that send Do Not
   Track.
@@ -483,7 +482,7 @@ See [android/README.md](android/README.md).
 
 ```bash
 # Postgres stands in for DSQL locally
-docker run -d --rm --name analytico-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:16-alpine
+docker run -d --rm --name wgo-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:16-alpine
 
 cd sdk && npm i && npm run build && cd ..
 cd backend && npm i
@@ -509,17 +508,6 @@ cd sdk && npm test                       # buffering, capture, selectors, transp
 cd backend && npm test                   # normalization, matching, allowlist, OTLP protobuf≡JSON with real OTel serializers
 cd backend && npm run test:integration   # full API + ingest + OTLP against Postgres (needs the container above)
 ```
-
-## Upgrading from "Analytico"
-
-WGO was briefly called Analytico. Existing installs keep working with no changes:
-- **SDK file:** `sdk/v1/analytico.js` is still served.
-- **SDK global and config:** `window.Analytico` and `window.AnalyticoConfig` still work.
-- **Attributes:** `data-analytico-*` attributes are still honoured.
-- **OTLP header:** `x-analytico-key` is still accepted.
-
-If you deployed before the rename, set `STACK_NAME` to your existing stack name (e.g. `analytico`), so the
-deploy updates it instead of creating a new one.
 
 ## Known limits
 

@@ -71,6 +71,7 @@ export const SCHEMA_STATEMENTS: string[] = [
      city text,
      lat double precision,
      lon double precision,
+     bot text,
      PRIMARY KEY (project_id, ts, id)
    )`,
   // v2: visitor location (stacks created before it need the columns added; one DDL per statement)
@@ -79,6 +80,8 @@ export const SCHEMA_STATEMENTS: string[] = [
   `ALTER TABLE events ADD COLUMN IF NOT EXISTS city text`,
   `ALTER TABLE events ADD COLUMN IF NOT EXISTS lat double precision`,
   `ALTER TABLE events ADD COLUMN IF NOT EXISTS lon double precision`,
+  // bot classification (lib/bots.ts): null = human
+  `ALTER TABLE events ADD COLUMN IF NOT EXISTS bot text`,
   `CREATE INDEX ASYNC IF NOT EXISTS events_type_ts_idx ON events (project_id, type, ts)`,
   `CREATE INDEX ASYNC IF NOT EXISTS events_session_idx ON events (project_id, session_id, ts)`,
   `CREATE INDEX ASYNC IF NOT EXISTS events_fingerprint_idx ON events (project_id, fingerprint, ts)`,

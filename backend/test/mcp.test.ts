@@ -154,7 +154,7 @@ describe('MCP Lambda glue', () => {
     }) as unknown as APIGatewayProxyEventV2;
 
   it('trusts the forwarded host only with the CloudFront edge secret', () => {
-    expect(lambda.publicOrigin(event({ 'x-forwarded-host': 'wgo.example.com', 'x-analytico-edge': 'edge-secret' }))).toBe('https://wgo.example.com');
+    expect(lambda.publicOrigin(event({ 'x-forwarded-host': 'wgo.example.com', 'x-wgo-edge': 'edge-secret' }))).toBe('https://wgo.example.com');
     expect(lambda.publicOrigin(event({ 'x-forwarded-host': 'evil.example' }))).toBe('https://abc123.execute-api.eu-west-1.amazonaws.com');
   });
 
@@ -166,7 +166,7 @@ describe('MCP Lambda glue', () => {
   });
 
   it('answers 401 with a challenge through the real handler when no token is sent', async () => {
-    const res = await lambda.handler(event({ 'content-type': 'application/json', 'x-forwarded-host': 'wgo.example.com', 'x-analytico-edge': 'edge-secret' }));
+    const res = await lambda.handler(event({ 'content-type': 'application/json', 'x-forwarded-host': 'wgo.example.com', 'x-wgo-edge': 'edge-secret' }));
     expect(res.statusCode).toBe(401);
     expect(res.headers!['www-authenticate']).toContain('https://wgo.example.com/.well-known/oauth-protected-resource/mcp');
   });

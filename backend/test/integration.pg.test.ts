@@ -2,7 +2,7 @@
  * End-to-end over real SQL: runs the schema, the ingest + OTLP handlers and every API route against
  * PostgreSQL. DSQL is PostgreSQL-compatible; the only schema difference is `CREATE INDEX ASYNC`.
  *
- *   docker run -d --rm --name analytico-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:16-alpine
+ *   docker run -d --rm --name wgo-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:16-alpine
  *   DATABASE_URL=postgres://postgres:pw@localhost:55432/postgres npx vitest run test/integration.pg.test.ts
  */
 import type { APIGatewayProxyEventV2, APIGatewayProxyStructuredResultV2 } from 'aws-lambda';
@@ -91,7 +91,7 @@ d('integration (PostgreSQL)', async () => {
       e('custom', { name: 'checkout_started', props: { total: 99 } }),
       e('vitals', { lcp: 1800, fcp: 900, cls: 0.05, inp: 120, ttfb: 200 }),
     ];
-    const batch = { k: writeKey, a: 'anon-1', sentAt: now, ctx: { sdk: 'analytico-js/0.1.0', ua: 'Mozilla/5.0 (Windows NT 10.0) Chrome/131 Safari/537.36' }, e: events };
+    const batch = { k: writeKey, a: 'anon-1', sentAt: now, ctx: { sdk: 'wgo-js/0.1.0', ua: 'Mozilla/5.0 (Windows NT 10.0) Chrome/131 Safari/537.36' }, e: events };
 
     const plain = (await ingest(httpEvent('POST', '/ingest', { body: JSON.stringify(batch) }))) as Res;
     expect(plain.statusCode).toBe(202);
@@ -184,7 +184,7 @@ d('integration (PostgreSQL)', async () => {
     const traceId = root.spanContext().traceId;
 
     const protoBody = Buffer.from(ProtobufTraceSerializer.serializeRequest(spanExporter.getFinishedSpans())!);
-    const t = (await otlp(httpEvent('POST', '/v1/traces', { body: protoBody, headers: { 'content-type': 'application/x-protobuf', 'x-analytico-key': writeKey } }))) as Res;
+    const t = (await otlp(httpEvent('POST', '/v1/traces', { body: protoBody, headers: { 'content-type': 'application/x-protobuf', 'x-wgo-key': writeKey } }))) as Res;
     expect(t.statusCode).toBe(200);
     expect(t.headers?.['content-type']).toBe('application/x-protobuf');
 

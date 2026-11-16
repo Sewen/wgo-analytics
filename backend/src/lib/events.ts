@@ -1,6 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import type { AnalyticsEvent, EventType } from '../contract';
 import { NO_GEO, type Geo } from './geo';
+import { botReason } from './bots';
 import { parseUserAgent } from './ua';
 
 /** SDK wire format (see sdk/README.md). */
@@ -60,13 +61,14 @@ export interface EventRow {
   city: string | null;
   lat: number | null;
   lon: number | null;
+  bot: string | null;
 }
 
 export const EVENT_COLUMNS: (keyof EventRow)[] = [
   'project_id', 'ts', 'id', 'type', 'session_id', 'anon_id', 'user_id', 'url', 'path', 'title', 'referrer',
   'selector', 'element_text', 'element_tag', 'track_name', 'error_message', 'error_stack', 'error_source', 'fingerprint',
   'http_method', 'http_url', 'http_route', 'http_status', 'duration_ms', 'name', 'props', 'browser', 'os', 'device',
-  'country', 'region', 'city', 'lat', 'lon',
+  'country', 'region', 'city', 'lat', 'lon', 'bot',
 ];
 
 const TYPES = new Set<EventType>(['pageview', 'click', 'error', 'http_error', 'custom', 'vitals', 'identify']);
@@ -92,6 +94,8 @@ export function normalizeBatch(projectId: string, batch: WireBatch, receivedAt =
   const ua = parseUserAgent(str(batch.ctx?.ua) ?? userAgentHeader ?? '');
   const ctxExtras: Record<string, unknown> = {};
   for (const k of ['lang', 'sw', 'sh', 'tz', 'release', 'env', 'sdk'] as const) if (batch.ctx?.[k] !== undefined) ctxExtras[k] = batch.ctx[k];
+  // one verdict per batch: it all comes from the same browser, location and time zone
+  const bot = botReason({ uaIsBot: ua.browser === 'Bot', webdriver: batch.ctx?.wd, tz: batch.ctx?.tz, country: geo.country, at: new Date(receivedAt) });
 
   const rows: EventRow[] = [];
   for (const e of batch.e.slice(0, MAX_EVENTS_PER_BATCH)) {
@@ -120,6 +124,7 @@ export function normalizeBatch(projectId: string, batch: WireBatch, receivedAt =
       os: ua.os,
       device: ua.device,
       ...geo,
+      bot,
     };
     switch (e.t) {
       case 'click':
@@ -234,6 +239,7 @@ export function toApiEvent(r: EventRow): AnalyticsEvent {
     city: r.city ?? null,
     lat: r.lat ?? null,
     lon: r.lon ?? null,
+    bot: r.bot ?? null,
   };
 }
 

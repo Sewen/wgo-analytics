@@ -10,7 +10,7 @@ const ev = (over: Partial<AnalyticsEvent> = {}): AnalyticsEvent => ({
   title: null, referrer: null, selector: 'button.buy', elementText: 'Buy now', elementTag: 'button', trackName: 'buy', errorMessage: null, errorStack: null,
   errorSource: null, fingerprint: null, httpMethod: null, httpUrl: null, httpRoute: null, httpStatus: null, durationMs: null, name: null,
   props: { rage: 3, props: { plan: 'pro', value: 120 } }, browser: 'Chrome', os: 'macOS', device: 'desktop', country: 'SE', region: null, city: 'Stockholm',
-  lat: 59.3, lon: 18.1, ...over,
+  lat: 59.3, lon: 18.1, bot: null, ...over,
 });
 
 describe('webhook URL guard', () => {

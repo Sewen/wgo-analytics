@@ -93,7 +93,7 @@ export function vitals(from: number): VitalsResponse {
 
 // ---------- events (walk backwards through 1-second slots) ----------
 const TYPE_W: Array<{ t: EventType; w: number }> = [{ t: 'pageview', w: 32 }, { t: 'click', w: 50 }, { t: 'custom', w: 6 }, { t: 'error', w: 3 }, { t: 'http_error', w: 4 }, { t: 'vitals', w: 5 }];
-const empty = (): AnalyticsEvent => ({ id: '', type: 'pageview', ts: '', sessionId: null, anonId: null, userId: null, url: null, path: null, title: null, referrer: null, selector: null, elementText: null, elementTag: null, trackName: null, errorMessage: null, errorStack: null, errorSource: null, fingerprint: null, httpMethod: null, httpUrl: null, httpRoute: null, httpStatus: null, durationMs: null, name: null, props: {}, browser: null, os: null, device: null, country: null, region: null, city: null, lat: null, lon: null });
+const empty = (): AnalyticsEvent => ({ id: '', type: 'pageview', ts: '', sessionId: null, anonId: null, userId: null, url: null, path: null, title: null, referrer: null, selector: null, elementText: null, elementTag: null, trackName: null, errorMessage: null, errorStack: null, errorSource: null, fingerprint: null, httpMethod: null, httpUrl: null, httpRoute: null, httpStatus: null, durationMs: null, name: null, props: {}, browser: null, os: null, device: null, country: null, region: null, city: null, lat: null, lon: null, bot: null });
 const BLOCK = 90;
 export function eventAt(s: number, k = 0): AnalyticsEvent | null {
   if (rnd(s, k, 11) > Math.min(0.9, rate(s * SEC) * 2.2)) return null;

@@ -7,7 +7,6 @@ afterEach(async () => {
   vi.resetModules()
   vi.unstubAllGlobals()
   Object.defineProperty(document, 'currentScript', { value: null, configurable: true })
-  delete (window as { AnalyticoConfig?: unknown }).AnalyticoConfig
   delete (window as { WGOConfig?: unknown }).WGOConfig
   document.querySelectorAll('script[data-write-key]').forEach((s) => s.remove())
   vi.useRealTimers()
@@ -45,7 +44,7 @@ describe('script-tag auto-init', () => {
     expect(batchOf(f.mock.calls[0]).k).toBe('wk_found')
   })
 
-  it('accepts window.WGOConfig, and the pre-rename window.AnalyticoConfig', async () => {
+  it('accepts window.WGOConfig', async () => {
     const f = mockFetch()
     ;(window as { WGOConfig?: unknown }).WGOConfig = { writeKey: 'wk_global', endpoint: 'https://api.test' }
     const mod = await import('../src/auto')
@@ -55,7 +54,7 @@ describe('script-tag auto-init', () => {
 
   it('shares one client when the SDK is loaded twice', async () => {
     const f = mockFetch()
-    ;(window as { AnalyticoConfig?: unknown }).AnalyticoConfig = { writeKey: 'wk_twice', endpoint: 'https://api.test' }
+    ;(window as { WGOConfig?: unknown }).WGOConfig = { writeKey: 'wk_twice', endpoint: 'https://api.test' }
     const first = await import('../src/auto')
     vi.resetModules() // a second, independent copy of the bundle
     const second = await import('../src/auto')

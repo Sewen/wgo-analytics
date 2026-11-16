@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { BellPlus, Bookmark, BookmarkCheck, Filter as FilterIcon, Flame, History, Plus, Trash2, X } from 'lucide-react';
+import { BellPlus, Bookmark, BookmarkCheck, Filter as FilterIcon, Flame, History, Plus, Trash2, X, Bot } from 'lucide-react';
 import type { Filter, FilterOp, FilterScope, SavedView } from '../api/contract';
 import { useDeleteView, useFields, useFieldValues, useSaveView, useViews } from '../api/hooks';
 import { cn, fmtNum } from '../lib/format';
@@ -7,7 +7,7 @@ import { describeFilter, fieldLabel, filterSetKey, needsValue, OP_LABEL, OPS, pa
 import { forgetFilterUse, recordFilterUse, useFilterHistory, type FilterUse } from '../lib/filterHistory';
 import { suggestName, suggestViewName } from '../lib/naming';
 import { PAGES, useProject } from '../lib/project';
-import { navigate, useRoute } from '../lib/router';
+import { navigate, useRoute, useSetParams } from '../lib/router';
 import { useTime } from '../lib/time';
 import { isKiosk } from '../lib/kiosk';
 import { Button, useDebounced, useToast } from './kit';
@@ -155,6 +155,21 @@ function useRecordFilterUse(pid: string, scope: FilterScope, filters: Filter[]) 
  * Chips for the active filters of a scope; filters live in the URL. Also: one-click recent and most used filter
  * sets, saved views, and turning what the page shows into a trigger.
  */
+/** Bot traffic (scrapers, crawlers, automation) is left out of the numbers unless shown here. */
+function BotsToggle() {
+  const route = useRoute();
+  const set = useSetParams();
+  const shown = route.params.get('bots') === '1';
+  return (
+    <button onClick={() => set({ bots: shown ? null : '1' })}
+      className={cn('inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[12px] cursor-pointer',
+        shown ? 'border-warn/50 bg-warn/10 text-warn' : 'border-line text-muted hover:border-[var(--line-strong)] hover:text-fg')}
+      title={shown ? 'Bot traffic is included in every number. Click to leave it out again.' : 'Scrapers, crawlers and automated browsers are left out of the numbers. Click to include them.'}>
+      <Bot size={12} />{shown ? 'Bots included' : 'Bots hidden'}
+    </button>
+  );
+}
+
 export function FilterBar({ scope, className }: { scope: FilterScope; className?: string }) {
   const [filters, setFilters] = useFilters(scope);
   const { project } = useProject();
@@ -167,6 +182,7 @@ export function FilterBar({ scope, className }: { scope: FilterScope; className?
     <FilterChips scope={scope} value={filters} onChange={setFilters} className={className}>
       {!filters.length && <QuickFilters scope={scope} onPick={setFilters} />}
       <div className="ml-auto flex items-center gap-2">
+        {scope === 'events' && <BotsToggle />}
         {triggerFilters.length > 0 && (
           <button onClick={() => navigate(newTriggerHref(project.id, route.params, scope, triggerFilters))}
             className="inline-flex items-center gap-1.5 rounded-full border border-line px-2.5 py-0.5 text-[12px] text-muted hover:border-[var(--line-strong)] hover:text-fg cursor-pointer"

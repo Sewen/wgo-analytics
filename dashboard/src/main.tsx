@@ -1,3 +1,4 @@
+import './lib/legacyStorage'; // first: moves old storage keys before anything reads them
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';

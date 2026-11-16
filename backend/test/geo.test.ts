@@ -17,8 +17,8 @@ describe('geoFromHeaders', () => {
 
   it('only trusts headers vouched for by our CloudFront distribution when a secret is configured', () => {
     expect(geoFromHeaders(cf, 'secret')).toEqual(NO_GEO); // forged: called API Gateway directly
-    expect(geoFromHeaders({ ...cf, 'x-analytico-edge': 'nope' }, 'secret')).toEqual(NO_GEO);
-    expect(geoFromHeaders({ ...cf, 'x-analytico-edge': 'secret' }, 'secret').country).toBe('SE');
+    expect(geoFromHeaders({ ...cf, 'x-wgo-edge': 'nope' }, 'secret')).toEqual(NO_GEO);
+    expect(geoFromHeaders({ ...cf, 'x-wgo-edge': 'secret' }, 'secret').country).toBe('SE');
   });
 
   it('rejects garbage', () => {

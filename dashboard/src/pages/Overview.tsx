@@ -23,6 +23,7 @@ import type { AnalyticsEvent, EventsResponse, Totals } from '../api/contract';
 import type { TimeRange } from '../lib/time';
 
 import { FilterBar } from '../ui/FilterBar';
+import { InfoTip } from '../ui/InfoTip';
 function Kpi({ label, icon, cur, prev, spark, color, invert, note }: { label: string; icon: React.ReactNode; cur?: number; prev?: number; spark?: number[]; color: string; invert?: boolean; note?: string }) {
   return (
     <Card className="relative overflow-hidden p-4" hover>
@@ -34,6 +35,16 @@ function Kpi({ label, icon, cur, prev, spark, color, invert, note }: { label: st
   );
 }
 
+// What each Web Vital measures; thresholds are added from RATINGS so the text always matches the bars.
+const VITAL_INFO: Record<string, { name: string; what: string }> = {
+  lcp: { name: 'Largest Contentful Paint', what: 'How long until the main content (the largest image or text block) has rendered. The best single measure of perceived load speed.' },
+  fcp: { name: 'First Contentful Paint', what: 'How long until anything (text, an image) first appears, so the visitor sees the page is loading.' },
+  cls: { name: 'Cumulative Layout Shift', what: 'How much the content jumps around while it loads, as a score (lower is better). Unexpected shifts make people click the wrong thing.' },
+  inp: { name: 'Interaction to Next Paint', what: 'How quickly the page visibly responds to clicks, taps and key presses, measured over the visit.' },
+  ttfb: { name: 'Time to First Byte', what: 'How long until the first byte of the page arrives from the server: network plus server time.' },
+};
+const fmtThreshold = (v: number, unit: string) => (unit === 'ms' ? (v >= 1000 ? `${v / 1000} s` : `${v} ms`) : String(v));
+
 const RATINGS: Record<string, { good: number; poor: number; unit: string; label: string }> = {
   lcp: { good: 2500, poor: 4000, unit: 'ms', label: 'LCP' }, fcp: { good: 1800, poor: 3000, unit: 'ms', label: 'FCP' },
   cls: { good: 0.1, poor: 0.25, unit: '', label: 'CLS' }, inp: { good: 200, poor: 500, unit: 'ms', label: 'INP' }, ttfb: { good: 800, poor: 1800, unit: 'ms', label: 'TTFB' },
@@ -43,7 +54,14 @@ function VitalsCard() {
   const v = useVitals(project.id, range);
   return (
     <Card>
-      <CardHeader title="Web Vitals" sub={v.data ? `p75 · ${fmtNum(v.data.samples)} samples` : 'p75'} />
+      <CardHeader title="Web Vitals" sub={<span className="inline-flex items-center gap-1">
+        p75
+        <InfoTip label="What is p75?">
+          <b className="text-fg">p75, the 75th percentile.</b> 3 out of 4 page loads were this fast or faster. It’s how Google rates
+          Web Vitals: typical-but-not-best experience, without a few extreme visits skewing it.
+        </InfoTip>
+        {v.data && <> · {fmtNum(v.data.samples)} samples</>}
+      </span>} />
       <div className="space-y-3 px-4 pb-4">
         {v.isPending && Array.from({ length: 5 }, (_, i) => <Skeleton key={i} className="h-9" />)}
         {v.data && Object.entries(RATINGS).map(([k, r]) => {
@@ -54,7 +72,14 @@ function VitalsCard() {
           return (
             <div key={k}>
               <div className="flex items-baseline justify-between">
-                <span className="text-[12px] font-medium text-muted">{r.label}</span>
+                <span className="inline-flex items-center gap-1 text-[12px] font-medium text-muted">{r.label}
+                  <InfoTip label={`What is ${r.label}?`}>
+                    <b className="text-fg">{r.label}: {VITAL_INFO[k].name}.</b> {VITAL_INFO[k].what}
+                    <span className="mt-1.5 block text-[11.5px]">
+                      <span className="text-good">Good</span> ≤ {fmtThreshold(r.good, r.unit)} · <span className="text-bad">poor</span> &gt; {fmtThreshold(r.poor, r.unit)}
+                    </span>
+                  </InfoTip>
+                </span>
                 <span className="flex items-center gap-2"><span className="tnum text-[15px] font-semibold">{val == null ? '–' : k === 'cls' ? val.toFixed(3) : Math.round(val)}<span className="ml-0.5 text-[11px] font-normal text-faint">{r.unit}</span></span>
                   {rating && <span className="rounded-md px-1.5 text-[10.5px] font-medium leading-5" style={{ color: tone, background: `color-mix(in srgb, ${tone} 14%, transparent)` }}>{rating}</span>}</span>
               </div>
@@ -112,8 +137,8 @@ function HistoryCallout({ pid, range, group, byCell, compact }: { pid: string; r
 function Visitors() {
   const { project } = useProject(); const { range } = useTime();
   const g = useGeo(project.id, range);
-  const [mode, setMode] = useState<CalloutMode>(() => (localStorage.getItem('analytico.mapCallouts') as CalloutMode) || 'off');
-  const changeMode = (m: CalloutMode) => { setMode(m); localStorage.setItem('analytico.mapCallouts', m); };
+  const [mode, setMode] = useState<CalloutMode>(() => (localStorage.getItem('wgo.mapCallouts') as CalloutMode) || 'off');
+  const changeMode = (m: CalloutMode) => { setMode(m); localStorage.setItem('wgo.mapCallouts', m); };
   // most recent located events, grouped per map cell, feed the callouts
   const recent = useQuery({
     queryKey: ['located-events', project.id, range.from, range.to],
@@ -192,7 +217,7 @@ export function Overview() {
       <FilterBar scope="events" />
       <div className="grid grid-cols-2 gap-4 lg:grid-cols-3 xl:grid-cols-6">
         <Kpi label="Pageviews" icon={<Eye size={14} />} cur={T('pageviews')} prev={P('pageviews')} spark={sp('pageview')} color="var(--s1)" />
-        <Kpi label="Sessions" icon={<Layers size={14} />} cur={T('sessions')} prev={P('sessions')} color="var(--s7)" note={s && s.totals.sessions ? `${(s.totals.pageviews / s.totals.sessions).toFixed(1)} pages / session` : ''} />
+        <Kpi label="Sessions" icon={<Layers size={14} />} cur={T('sessions')} prev={P('sessions')} color="var(--s7)" note={s && s.totals.sessions ? `${(s.totals.pageviews / s.totals.sessions).toFixed(1)} pages / session${s.botSessions ? ` · ${fmtNum(s.botSessions)} bot sessions hidden` : ''}` : s?.botSessions ? `${fmtNum(s.botSessions)} bot sessions hidden` : ''} />
         <Kpi label="Users" icon={<Users size={14} />} cur={T('users')} prev={P('users')} color="var(--s7)" note={s && s.totals.users ? `${(s.totals.sessions / s.totals.users).toFixed(2)} sessions / user` : ''} />
         <Kpi label="Clicks" icon={<MousePointerClick size={14} />} cur={T('clicks')} prev={P('clicks')} spark={sp('click')} color="var(--s3)" />
         <Kpi label="Errors" icon={<Bug size={14} />} cur={T('errors')} prev={P('errors')} spark={sp('error')} color="var(--s8)" invert />

@@ -1,3 +1,4 @@
+import { InfoTip } from '../ui/InfoTip';
 import { useMemo, useState } from 'react';
 import { ArrowLeft, ChevronDown, ChevronRight, ScrollText, Search, Waypoints } from 'lucide-react';
 import { useServices, useTrace, useTraces } from '../api/hooks';
@@ -42,7 +43,7 @@ function TraceList() {
           <CardHeader title="Services" sub="click to filter" />
           {services.isPending ? <div className="space-y-2 p-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-8" />)}</div> : (
             <div className="px-2 pb-2 text-[12.5px]">
-              <div className="grid grid-cols-[1fr_60px_60px_64px_64px] gap-2 px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-faint"><span>Service</span><span className="text-right">Spans</span><span className="text-right">Err</span><span className="text-right">p50</span><span className="text-right">p95</span></div>
+              <div className="grid grid-cols-[1fr_60px_60px_64px_64px] gap-2 px-2 py-1 text-[10.5px] font-semibold uppercase tracking-wider text-faint"><span>Service</span><span className="text-right">Spans</span><span className="text-right">Err</span><span className="inline-flex items-center justify-end gap-1">p50<InfoTip align="end" label="What is p50?"><b className="text-fg">p50, the median.</b> Half of this service’s spans were faster than this, half slower.</InfoTip></span><span className="inline-flex items-center justify-end gap-1">p95<InfoTip align="end" label="What is p95?"><b className="text-fg">p95, the 95th percentile.</b> 95% of spans were faster than this. It shows the slow tail your unluckiest users hit, which an average hides.</InfoTip></span></div>
               {services.data!.map((s) => (
                 <button key={s.service} onClick={() => set({ service: service === s.service ? null : s.service })} className={cn('grid w-full grid-cols-[1fr_60px_60px_64px_64px] items-center gap-2 rounded-md px-2 py-1.5 text-left tnum transition-colors hover:bg-[var(--hl)] cursor-pointer', service === s.service && 'bg-accent/12')}>
                   <span className="flex items-center gap-2 font-sans font-medium"><i className="h-2 w-2 rounded-[3px]" style={{ background: serviceColor(names, s.service) }} />{s.service}</span>

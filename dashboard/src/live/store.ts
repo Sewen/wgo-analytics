@@ -33,7 +33,7 @@ export class LiveStore {
   constructor(pid: string) {
     this.pid = pid;
     // a kiosk gets its watches from its configuration (setWatches), not from this browser's storage
-    try { this.watches = KIOSK_TOKEN ? [] : JSON.parse(localStorage.getItem(`analytico.watches.${pid}`) ?? '[]'); } catch { this.watches = []; }
+    try { this.watches = KIOSK_TOKEN ? [] : JSON.parse(localStorage.getItem(`wgo.watches.${pid}`) ?? '[]'); } catch { this.watches = []; }
   }
 
   subscribe = (cb: () => void) => { this.listeners.add(cb); return () => this.listeners.delete(cb); };
@@ -49,7 +49,7 @@ export class LiveStore {
   clearFeed() { this.feed = []; if (this.frozen) this.frozen = []; this.bump(); }
 
   // ---- watches ----
-  private persist() { localStorage.setItem(`analytico.watches.${this.pid}`, JSON.stringify(this.watches)); this.resubscribe(); this.bump(); }
+  private persist() { localStorage.setItem(`wgo.watches.${this.pid}`, JSON.stringify(this.watches)); this.resubscribe(); this.bump(); }
   addWatch(w: Omit<Watch, 'id'>): Watch {
     const full = { ...w, id: 'w_' + Math.random().toString(36).slice(2, 10) };
     this.watches = [...this.watches, full]; this.persist(); return full;

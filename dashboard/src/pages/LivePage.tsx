@@ -95,8 +95,8 @@ const CALLOUT_MAX = 5;
 function LiveMap({ store }: { store: LiveStore }) {
   useTick(500);
   const now = Date.now();
-  const [mode, setMode] = useState<CalloutMode>(() => (localStorage.getItem('analytico.liveCallouts') as CalloutMode) || 'all');
-  const changeMode = (m: CalloutMode) => { setMode(m); localStorage.setItem('analytico.liveCallouts', m); };
+  const [mode, setMode] = useState<CalloutMode>(() => (localStorage.getItem('wgo.liveCallouts') as CalloutMode) || 'all');
+  const changeMode = (m: CalloutMode) => { setMode(m); localStorage.setItem('wgo.liveCallouts', m); };
   // newest first; pings fade out by themselves, we only need the last few seconds
   const recent = [];
   for (const it of store.feed) {

@@ -36,7 +36,7 @@ On boot the app fetches `/config.json` (type `RuntimeConfig` in `src/api/contrac
 
 - Any email/password signs in; the sign-up confirmation code is `123456`.
 - Every endpoint in the contract returns deterministic generated data that respects `from`/`to`. The mock WebSocket emits events every 150-500 ms, including clicks that match the example watches.
-- Projects, members and write keys created in mock mode persist in `localStorage` (`analytico.mock.db`).
+- Projects, members and write keys created in mock mode persist in `localStorage` (`wgo.mock.db`).
 - URL flags: `?mock_autologin=1` signs in automatically and seeds four demo watches, `?mock_empty=1` starts with no projects (onboarding flow), `?mock_theme=light|dark`.
 - The mock is loaded with a dynamic import behind `import.meta.env.VITE_MOCK`, which `vite.config.ts` replaces statically, so a normal `npm run build` contains no mock code.
 

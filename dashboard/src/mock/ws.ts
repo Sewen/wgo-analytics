@@ -20,7 +20,7 @@ function makeEvent(): AnalyticsEvent {
   const type = weighted(TYPES.map((t) => ({ ...t })), seq, Date.now()).t;
   const s = pick(sessions, seq, 3);
   const base: AnalyticsEvent = { id: 'live_' + hex(10, seq, Date.now()), type, ts: new Date().toISOString(), sessionId: s.sessionId, anonId: s.anonId, userId: null, url: null, path: weighted(PAGES, seq, 4).path, title: null, referrer: null,
-    selector: null, elementText: null, elementTag: null, trackName: null, errorMessage: null, errorStack: null, errorSource: null, fingerprint: null, httpMethod: null, httpUrl: null, httpRoute: null, httpStatus: null, durationMs: null, name: null, props: {}, browser: s.browser, os: s.os, device: s.device, country: s.country, region: s.region, city: s.city, lat: s.lat, lon: s.lon };
+    selector: null, elementText: null, elementTag: null, trackName: null, errorMessage: null, errorStack: null, errorSource: null, fingerprint: null, httpMethod: null, httpUrl: null, httpRoute: null, httpStatus: null, durationMs: null, name: null, props: {}, browser: s.browser, os: s.os, device: s.device, country: s.country, region: s.region, city: s.city, lat: s.lat, lon: s.lon, bot: null };
   base.url = 'https://shop.acme.dev' + base.path;
   if (type === 'click') { const c = weighted(CLICKS, seq, 5); Object.assign(base, { selector: c.selector, elementText: c.text, elementTag: c.tag, trackName: c.track, path: c.path }); }
   else if (type === 'error') { const e = weighted(ERRORS, seq, 6); Object.assign(base, { errorMessage: e.msg, errorStack: e.stack, errorSource: e.source, fingerprint: e.fp }); }

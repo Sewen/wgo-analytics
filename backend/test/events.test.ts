@@ -12,7 +12,7 @@ const NOW = Date.UTC(2026, 10, 16, 12, 0, 0);
 const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
 
 const batch = (e: WireBatch['e'], extra: Partial<WireBatch> = {}): WireBatch => ({
-  k: 'wk_test', a: 'anon-1', sentAt: NOW, ctx: { sdk: 'analytico-js/0.1.0', ua: UA, lang: 'en' }, e, ...extra,
+  k: 'wk_test', a: 'anon-1', sentAt: NOW, ctx: { sdk: 'wgo-js/0.1.0', ua: UA, lang: 'en' }, e, ...extra,
 });
 const base = { s: 'sess-1', url: 'https://shop.test/cart?x=1', path: '/cart', ts: NOW - 1000 };
 

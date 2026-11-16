@@ -136,7 +136,7 @@ describe('click capture', () => {
       <select id="i3"><option>opt secret</option></select>
       <div id="i4" contenteditable="true">my notes</div>
       <button id="i5" type="password">hunter2</button>
-      <div data-wgo-mask><button id="i6">Alice Smith</button></div><div data-analytico-mask><button id="i8">Bob Legacy</button></div>
+      <div data-wgo-mask><button id="i6">Alice Smith</button></div><div data-wgo-mask><button id="i8">Bob Smith</button></div>
       <input id="i7" type="button" value="Click me">`)
     A.init(cfg({ autocapture: on }))
     for (const id of ['i1', 'i2', 'i3', 'i4', 'i5', 'i6', 'i7', 'i8']) click(q('#' + id))
@@ -148,8 +148,8 @@ describe('click capture', () => {
     expect(JSON.stringify(eventsOf(f))).not.toMatch(/secret|hunter2|Alice|Bob|typed|notes/)
   })
 
-  it('skips elements inside data-wgo-ignore (and the pre-rename data-analytico-ignore)', async () => {
-    html('<div data-wgo-ignore><button id="x"><span id="y">no</span></button></div><div data-analytico-ignore><button id="w">legacy</button></div><button id="z">yes</button>')
+  it('skips elements inside data-wgo-ignore', async () => {
+    html('<div data-wgo-ignore><button id="x"><span id="y">no</span></button></div><div data-wgo-ignore><button id="w">other</button></div><button id="z">yes</button>')
     A.init(cfg({ autocapture: on }))
     click(q('#y')); click(q('#x')); click(q('#w')); click(q('#z'))
     await A.flush()

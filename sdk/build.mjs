@@ -6,8 +6,7 @@ import { readFileSync, rmSync } from 'node:fs'
 rmSync('dist', { recursive: true, force: true })
 const common = { bundle: true, target: 'es2020', legalComments: 'none', logLevel: 'warning' }
 
-// `Analytico` stays as an alias so snippets and console habits from before the rename keep working
-await build({ ...common, entryPoints: ['src/auto.ts'], outfile: 'dist/wgo.js', format: 'iife', globalName: 'WGO', minify: true, footer: { js: 'window.Analytico=WGO;' } })
+await build({ ...common, entryPoints: ['src/auto.ts'], outfile: 'dist/wgo.js', format: 'iife', globalName: 'WGO', minify: true })
 await build({ ...common, entryPoints: ['src/index.ts'], outfile: 'dist/index.mjs', format: 'esm' })
 execSync('npx tsc -p tsconfig.build.json', { stdio: 'inherit' })
 

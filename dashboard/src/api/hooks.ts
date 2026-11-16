@@ -7,7 +7,7 @@ import type {
   SavedView, SavedViewInput,
 } from './contract';
 import { previousWindow, type TimeRange } from '../lib/time';
-import { filtersParam } from '../lib/filters';
+import { botsParam, filtersParam } from '../lib/filters';
 
 const STALE = 20_000;
 const base = (pid: string) => `/api/projects/${pid}`;
@@ -31,7 +31,7 @@ const SCOPE: Record<string, FilterScope | undefined> = {
 
 function q<T>(pid: string, name: string, r: TimeRange, path: string, extra: Record<string, string | number | boolean | undefined> = {}, enabled = true) {
   const scope = SCOPE[name];
-  const params = scope ? { ...extra, filters: filtersParam(scope) } : extra;
+  const params = scope ? { ...extra, filters: filtersParam(scope), ...(scope === 'events' ? { bots: botsParam() } : {}) } : extra;
   return {
     queryKey: [name, pid, r.from, r.to, params] as const,
     queryFn: ({ signal }: { signal: AbortSignal }) => api<T>(`${base(pid)}/${path}`, { params: { ...rp(r), ...params }, signal }),
@@ -42,7 +42,7 @@ function q<T>(pid: string, name: string, r: TimeRange, path: string, extra: Reco
 export const useStats = (pid: string, r: TimeRange) => useQuery(q<StatsResponse>(pid, 'stats', r, 'stats', { compare: 0 }));
 export function usePreviousTotals(pid: string, r: TimeRange) {
   const w = previousWindow(r);
-  return useQuery({ ...q<Totals>(pid, 'totals', { ...r, ...w }, 'totals'), queryKey: ['totals', pid, w.from, w.to, filtersParam('events')] as const, staleTime: 10 * 60_000 });
+  return useQuery({ ...q<Totals>(pid, 'totals', { ...r, ...w }, 'totals'), queryKey: ['totals', pid, w.from, w.to, filtersParam('events'), botsParam()] as const, staleTime: 10 * 60_000 });
 }
 export const useClicks = (pid: string, r: TimeRange) => useQuery(q<ClickRow[]>(pid, 'clicks', r, 'clicks', { limit: 100 }));
 export const usePages = (pid: string, r: TimeRange) => useQuery(q<PageRow[]>(pid, 'pages', r, 'pages', { limit: 10 }));
@@ -61,7 +61,7 @@ export const useTrace = (pid: string, traceId: string | null) =>
   useQuery({ queryKey: ['trace', pid, traceId], queryFn: () => api<TraceResponse>(`${base(pid)}/traces/${traceId}`), enabled: !!traceId, staleTime: 5 * 60_000 });
 
 export function useEvents(pid: string, r: TimeRange, base_: { type?: string; q?: string; sessionId?: string; fingerprint?: string }, enabled = true, limit = 100) {
-  const f = { ...base_, filters: filtersParam('events') };
+  const f = { ...base_, filters: filtersParam('events'), bots: botsParam() };
   return useInfiniteQuery({
     queryKey: ['events', pid, r.from, r.to, f, limit],
     queryFn: ({ pageParam, signal }) => api<EventsResponse>(`${base(pid)}/events`, { params: { from: r.from, to: r.to, ...f, limit, before: pageParam }, signal }),

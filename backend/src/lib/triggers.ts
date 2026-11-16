@@ -362,7 +362,7 @@ export async function testTrigger(pid: string, id: string): Promise<TriggerTestR
     id: randomUUID(), type: 'click', ts: new Date().toISOString(), sessionId: 'test', anonId: null, userId: null, url: null, path: '/example',
     title: null, referrer: null, selector: 'button#example', elementText: 'Example button', elementTag: 'button', trackName: 'example',
     errorMessage: null, errorStack: null, errorSource: null, fingerprint: null, httpMethod: null, httpUrl: null, httpRoute: null, httpStatus: null,
-    durationMs: null, name: null, props: {}, browser: 'Chrome', os: 'macOS', device: 'desktop', country: 'SE', region: null, city: 'Stockholm', lat: null, lon: null,
+    durationMs: null, name: null, props: {}, browser: 'Chrome', os: 'macOS', device: 'desktop', country: 'SE', region: null, city: 'Stockholm', lat: null, lon: null, bot: null,
   };
   const now = new Date().toISOString();
   const scope = scopeOf(t);

@@ -100,6 +100,8 @@ export interface AnalyticsEvent {
   city: string | null;
   lat: number | null; // rounded to 1 decimal (~11 km)
   lon: number | null;
+  // why this looks like a bot ('user-agent' | 'automation' | 'timezone-mismatch'), null for humans
+  bot: string | null;
 }
 
 export interface Totals {
@@ -115,6 +117,7 @@ export interface Totals {
 // ---------- rich filters ----------
 // Every analytics endpoint below (events scope: stats, clicks, pages, errors, http-errors, breakdown, vitals,
 // geo, events; logs scope: logs; spans scope: traces, services) accepts `filters=<JSON Filter[]>`.
+// Events-scope endpoints leave out bot traffic (AnalyticsEvent.bot) unless `bots=1`.
 // All filters must match (AND). Fields: a built-in field (see FieldsResponse.builtin), `props.<path>` for event
 // properties (nested with dots, e.g. `props.props.plan` for a custom event's `plan`), or for logs/spans
 // `attributes.<key>` / `resource.<key>` (OTel keys keep their dots, e.g. `attributes.http.route`).
@@ -256,6 +259,7 @@ export interface StatsResponse {
   totals: Totals;
   previous: Totals | null; // same-length window immediately before `from`; null with compare=0 (fetch it from /totals)
   series: Array<{ t: string; pageview: number; click: number; error: number; http_error: number; custom: number }>;
+  botSessions?: number; // sessions left out as bots in this range (when bots aren't included)
 }
 
 // GET /api/projects/{pid}/clicks?from&to&limit=50

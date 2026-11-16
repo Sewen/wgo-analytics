@@ -70,7 +70,7 @@ const auth: McpAuthConfig = {
  */
 export function publicOrigin(event: APIGatewayProxyEventV2): string {
   const forwarded = header(event, 'x-forwarded-host');
-  const viaEdge = !!EDGE_SECRET && header(event, 'x-analytico-edge') === EDGE_SECRET;
+  const viaEdge = !!EDGE_SECRET && header(event, 'x-wgo-edge') === EDGE_SECRET;
   return `https://${viaEdge && forwarded ? forwarded : event.requestContext.domainName}`;
 }
 

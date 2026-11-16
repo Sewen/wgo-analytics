@@ -30,7 +30,6 @@ export function writeKeyFrom(header: (name: string) => string | undefined, query
   const auth = header('authorization');
   return (
     header('x-wgo-key') ??
-    header('x-analytico-key') ?? // pre-rename name, still accepted
     (auth?.startsWith('Bearer ') ? auth.slice(7).trim() : undefined) ??
     queryKey
   );

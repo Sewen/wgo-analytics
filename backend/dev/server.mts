@@ -2,7 +2,7 @@
  * Local dev server: runs the real Lambda handlers over HTTP against plain PostgreSQL.
  * No Cognito locally — every /api request acts as DEV_EMAIL. Live WebSocket fan-out is disabled.
  *
- *   docker run -d --rm --name analytico-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:16-alpine
+ *   docker run -d --rm --name wgo-pg -e POSTGRES_PASSWORD=pw -p 55432:5432 postgres:16-alpine
  *   DATABASE_URL=postgres://postgres:pw@localhost:55432/postgres npm run dev
  *
  * Also serves ../examples and ../sdk/dist so the demo page works out of the box:
@@ -39,7 +39,7 @@ const [project] = await listProjects(DEV_EMAIL);
 
 const CORS = {
   'access-control-allow-origin': '*',
-  'access-control-allow-headers': 'authorization, content-type, content-encoding, x-wgo-key, x-analytico-key, x-wgo-device, mcp-protocol-version, mcp-method, mcp-name, mcp-session-id, last-event-id',
+  'access-control-allow-headers': 'authorization, content-type, content-encoding, x-wgo-key, x-wgo-device, mcp-protocol-version, mcp-method, mcp-name, mcp-session-id, last-event-id',
   'access-control-allow-methods': 'GET, POST, PATCH, DELETE, OPTIONS',
   'access-control-max-age': '86400',
   'access-control-expose-headers': 'www-authenticate, mcp-session-id',

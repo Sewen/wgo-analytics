@@ -84,7 +84,7 @@ export async function reportCluster(now = Date.now(), read = readClusterStats): 
     title: null, referrer: null, selector: null, element_text: null, element_tag: null, track_name: null, error_message: null,
     error_stack: null, error_source: null, fingerprint: null, http_method: null, http_url: null, http_route: null, http_status: null,
     duration_ms: null, name: 'wgo.cluster', props, browser: null, os: null, device: null, country: null, region: null, city: null,
-    lat: null, lon: null,
+    lat: null, lon: null, bot: null,
   };
   await insertRows('events', EVENT_COLUMNS, [eventRowValues(row)], { props: '::jsonb' });
   await evaluateTriggers(pid, [toApiEvent(row)]).catch((err) => console.warn('trigger evaluation failed', err));

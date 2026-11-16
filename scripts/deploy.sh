@@ -196,11 +196,8 @@ if [ -f dist/downloads/wgo-android.apk ]; then
 fi
 aws s3 cp dist/index.html "s3://$BUCKET/index.html" --cache-control 'no-cache' --content-type 'text/html'
 aws s3 cp dist/config.json "s3://$BUCKET/config.json" --cache-control 'no-cache' --content-type 'application/json'
-# wgo.js is current; analytico.js keeps snippets from before the rename working
-for name in wgo.js analytico.js; do
-  aws s3 cp "$ROOT/sdk/dist/wgo.js" "s3://$BUCKET/sdk/v1/$name" \
-    --cache-control 'public, max-age=300' --content-type 'text/javascript'
-done
+aws s3 cp "$ROOT/sdk/dist/wgo.js" "s3://$BUCKET/sdk/v1/wgo.js" \
+  --cache-control 'public, max-age=300' --content-type 'text/javascript'
 
 aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" \
   --paths /index.html /config.json /pair.html '/sdk/*' '/downloads/*' >/dev/null

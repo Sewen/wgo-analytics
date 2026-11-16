@@ -46,7 +46,7 @@ async function call<T>(op: string, body: unknown): Promise<T> {
 // "Keep me signed in" keeps the tokens in localStorage (survives browser restarts, shared by all tabs);
 // otherwise they live in sessionStorage and the session ends when the tab is closed.
 interface Tokens { idToken: string; accessToken: string; refreshToken: string; email: string }
-const KEY = 'analytico.tokens';
+const KEY = 'wgo.tokens';
 let tokens: Tokens | null = load();
 const listeners = new Set<() => void>();
 function read(store: Storage): Tokens | null {

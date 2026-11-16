@@ -4,7 +4,7 @@ import { hex } from './rng';
 import * as F from './filters';
 
 interface Db { projects: Project[]; members: Record<string, Member[]>; devices?: Device[]; triggers?: Record<string, Trigger[]>; integrations?: Record<string, SlackIntegration[]>; slackApps?: Record<string, string>; kiosks?: Record<string, Kiosk[]>; views?: Record<string, SavedView[]> }
-const KEY = 'analytico.mock.db';
+const KEY = 'wgo.mock.db';
 const newKey = () => 'ak_' + hex(28, Date.now(), Math.floor(Math.random() * 1e9));
 
 function load(email: string): Db {

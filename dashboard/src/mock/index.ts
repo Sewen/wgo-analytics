@@ -63,12 +63,12 @@ export function installMock() {
   };
   window.WebSocket = MockWebSocket as unknown as typeof WebSocket;
 
-  if (new URLSearchParams(location.search).has('mock_autologin') && !localStorage.getItem('analytico.tokens')) {
+  if (new URLSearchParams(location.search).has('mock_autologin') && !localStorage.getItem('wgo.tokens')) {
     const email = 'demo@wgo.dev';
-    localStorage.setItem('analytico.tokens', JSON.stringify({ idToken: jwt(email), accessToken: jwt(email), refreshToken: 'mock-refresh:' + email, email }));
+    localStorage.setItem('wgo.tokens', JSON.stringify({ idToken: jwt(email), accessToken: jwt(email), refreshToken: 'mock-refresh:' + email, email }));
     reloadTokens();
-    if (!localStorage.getItem('analytico.watches.prj_demo')) {
-      localStorage.setItem('analytico.watches.prj_demo', JSON.stringify([
+    if (!localStorage.getItem('wgo.watches.prj_demo')) {
+      localStorage.setItem('wgo.watches.prj_demo', JSON.stringify([
         { id: 'w_signup', label: 'Signup button', type: 'click', selector: '#signup-cta', name: 'signup-cta' },
         { id: 'w_cart', label: 'Add to cart', type: 'click', selector: 'button.add-to-cart' },
         { id: 'w_checkout', label: 'Checkout started', type: 'click', name: 'checkout' },
@@ -77,6 +77,6 @@ export function installMock() {
     }
   }
   const theme = new URLSearchParams(location.search).get('mock_theme');
-  if (theme) { document.documentElement.dataset.theme = theme; localStorage.setItem('analytico.theme', theme); }
+  if (theme) { document.documentElement.dataset.theme = theme; localStorage.setItem('wgo.theme', theme); }
   console.info('[wgo] mock mode: any credentials work, confirmation code is 123456');
 }

@@ -3,7 +3,7 @@ import type { Config } from './types'
 
 export * from './index'
 
-type W = Window & { WGOConfig?: Config; AnalyticoConfig?: Config }
+type W = Window & { WGOConfig?: Config }
 const flag = (v: string | undefined) => v === '' || v === 'true'
 
 /** The SDK is served from the same host that ingests events, so the endpoint defaults to the script's origin. */
@@ -37,7 +37,7 @@ function fromScript(s: HTMLScriptElement | null): Config | null {
  */
 function findConfig(own: HTMLScriptElement | null): Config | null {
   const w = window as W
-  const g = w.WGOConfig ?? w.AnalyticoConfig // pre-rename name still works
+  const g = w.WGOConfig
   if (g?.writeKey) {
     const endpoint = g.endpoint || originOf(own)
     if (endpoint) return { ...g, endpoint }

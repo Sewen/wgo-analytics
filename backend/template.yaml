@@ -85,7 +85,7 @@ Mappings:
       # SendMessage: body = base64 request body; attribute `meta` = name=value lines (signal, write key,
       # content type), parsed by parseQueuedRequest in src/handlers/otlp.ts
       Template: >-
-        Action=SendMessage&MessageBody=$util.urlEncode($input.body)&MessageAttribute.1.Name=meta&MessageAttribute.1.Value.DataType=String&MessageAttribute.1.Value.StringValue=signal%3D$util.urlEncode($input.params().path.get('signal'))#foreach($n in $input.params().header.keySet())#set($ln = $n.toLowerCase())#if($ln == 'content-type' || $ln == 'x-wgo-key' || $ln == 'x-analytico-key' || $ln == 'authorization')%0A$util.urlEncode($ln)%3D$util.urlEncode($input.params().header.get($n))#end#end#set($qk = $input.params().querystring.get('key'))#if("$!qk" != '')%0Akey%3D$util.urlEncode($qk)#end
+        Action=SendMessage&MessageBody=$util.urlEncode($input.body)&MessageAttribute.1.Name=meta&MessageAttribute.1.Value.DataType=String&MessageAttribute.1.Value.StringValue=signal%3D$util.urlEncode($input.params().path.get('signal'))#foreach($n in $input.params().header.keySet())#set($ln = $n.toLowerCase())#if($ln == 'content-type' || $ln == 'x-wgo-key' || $ln == 'authorization')%0A$util.urlEncode($ln)%3D$util.urlEncode($input.params().header.get($n))#end#end#set($qk = $input.params().querystring.get('key'))#if("$!qk" != '')%0Akey%3D$util.urlEncode($qk)#end
     Accepted:
       # OTLP: answer in the request's encoding; an empty protobuf response is zero bytes
       Template: >-
@@ -275,7 +275,7 @@ Resources:
     Properties:
       CorsConfiguration:
         AllowOrigins: ['*']
-        AllowHeaders: [authorization, content-type, content-encoding, x-wgo-key, x-analytico-key, x-wgo-device,
+        AllowHeaders: [authorization, content-type, content-encoding, x-wgo-key, x-wgo-device,
                        mcp-protocol-version, mcp-method, mcp-name, mcp-session-id, last-event-id]
         AllowMethods: [GET, POST, PATCH, DELETE, OPTIONS]
         ExposeHeaders: [www-authenticate]
@@ -505,7 +505,7 @@ Resources:
                     responseParameters:
                       method.response.header.Access-Control-Allow-Origin: "'*'"
                       method.response.header.Access-Control-Allow-Methods: "'POST,OPTIONS'"
-                      method.response.header.Access-Control-Allow-Headers: "'content-type,content-encoding,x-wgo-key,x-analytico-key'"
+                      method.response.header.Access-Control-Allow-Headers: "'content-type,content-encoding,x-wgo-key'"
                       method.response.header.Access-Control-Max-Age: "'86400'"
 
   ApiFunction:
@@ -851,7 +851,7 @@ Resources:
     Properties:
       ServiceToken: !GetAtt MigrateFunction.Arn
       SchemaVersion: !Ref SchemaVersion
-      SchemaHash: '2026-11-16-8' # bump when src/lib/schema.ts changes
+      SchemaHash: '2026-11-16-9' # bump when src/lib/schema.ts changes
 
   # ---------------------------------------------------------------- dashboard + SDK hosting
   WebBucket:
@@ -942,7 +942,7 @@ Resources:
               OriginProtocolPolicy: https-only
               OriginSSLProtocols: [TLSv1.2]
             OriginCustomHeaders:
-              - HeaderName: X-Analytico-Edge
+              - HeaderName: X-WGO-Edge
                 HeaderValue: !Select [2, !Split ['/', !Ref AWS::StackId]]
           - Id: otlp
             DomainName: !Sub '${OtlpApi}.execute-api.${AWS::Region}.amazonaws.com'

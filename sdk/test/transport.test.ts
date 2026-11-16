@@ -6,7 +6,7 @@ import { batchOf, ev, mockFetch, setBeacon } from './helpers'
 const URL_ = 'https://api.test/ingest'
 function make(over: Partial<TransportOpts> = {}) {
   return new Transport({
-    url: URL_, storageKey: 'analytico:q:wk', flushInterval: 5000, priorityFlushDelay: 1000, maxBatchSize: 50,
+    url: URL_, storageKey: 'wgo:q:wk', flushInterval: 5000, priorityFlushDelay: 1000, maxBatchSize: 50,
     maxBatchBytes: 60000, maxQueueSize: 1000, maxRetries: 6, persist: false, compress: false,
     meta: () => ({ k: 'wk', a: 'anon', ctx: { sdk: SDK } }), log: () => {}, ...over,
   })
@@ -250,7 +250,7 @@ describe('beacon', () => {
 })
 
 describe('persistence', () => {
-  const key = 'analytico:q:wk'
+  const key = 'wgo:q:wk'
   it('mirrors the queue to localStorage at most once per second and syncs on persistNow', async () => {
     mockFetch()
     const t = make({ persist: true })

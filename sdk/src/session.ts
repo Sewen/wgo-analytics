@@ -9,15 +9,15 @@ export class Session {
   private wrote = 0
 
   constructor(private timeout: number, private sampleRate: number) {
-    let a = ls.get('analytico:aid')
-    if (!a) { a = uuid(); ls.set('analytico:aid', a) }
+    let a = ls.get('wgo:aid')
+    if (!a) { a = uuid(); ls.set('wgo:aid', a) }
     this.aid = a
-    this.uid = ls.get('analytico:uid') || undefined
+    this.uid = ls.get('wgo:uid') || undefined
   }
 
   private read(): Rec | undefined {
     try {
-      const r = JSON.parse(ls.get('analytico:sid') || 'null')
+      const r = JSON.parse(ls.get('wgo:sid') || 'null')
       if (r && typeof r.id === 'string' && typeof r.last === 'number') return r
     } catch { /* corrupt */ }
     return undefined
@@ -33,12 +33,12 @@ export class Session {
       fresh = true
     } else r.last = now
     this.cur = r
-    if (fresh || now - this.wrote >= 1000) { this.wrote = now; ls.set('analytico:sid', JSON.stringify(r)) }
+    if (fresh || now - this.wrote >= 1000) { this.wrote = now; ls.set('wgo:sid', JSON.stringify(r)) }
     return { id: r.id, sampled: r.smp === 1 }
   }
 
   identify(id: string): void {
     this.uid = id
-    ls.set('analytico:uid', id)
+    ls.set('wgo:uid', id)
   }
 }

@@ -15,7 +15,7 @@ export interface Geo {
 }
 
 export const NO_GEO: Geo = { country: null, region: null, city: null, lat: null, lon: null };
-export const EDGE_HEADER = 'x-analytico-edge';
+export const EDGE_HEADER = 'x-wgo-edge';
 
 const text = (v: string | undefined, max = 120): string | null => {
   if (!v) return null;

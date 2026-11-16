@@ -23,7 +23,7 @@ export async function handler(event: CloudFormationCustomResourceEvent, context:
   const body = JSON.stringify({
     Status: status,
     Reason: reason || `See CloudWatch log stream ${context.logStreamName}`,
-    PhysicalResourceId: 'analytico-dsql-schema',
+    PhysicalResourceId: 'wgo-dsql-schema',
     StackId: event.StackId,
     RequestId: event.RequestId,
     LogicalResourceId: event.LogicalResourceId,

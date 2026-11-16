@@ -20,7 +20,8 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 
     // Live fan-out runs alongside the write: the dashboard should see a click as soon as we do.
     // A fan-out failure must never make the SDK retry (it would duplicate stored events).
-    const apiEvents = rows.map(toApiEvent);
+    // bots are stored (flagged) but never light up live watches or fire triggers
+    const apiEvents = rows.filter((r) => !r.bot).map(toApiEvent);
     const live = fanOut(projectId, apiEvents).catch((err) => console.warn('fan-out failed', err));
     // stacks are stored once per error group (before the events, so a visible error always has one)
     await storeErrorStacks(rows);

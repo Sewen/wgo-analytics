@@ -45,7 +45,7 @@ d('maintenance (PostgreSQL)', async () => {
     title: null, referrer: null, selector: null, element_text: null, element_tag: null, track_name: null, error_message: null,
     error_stack: null, error_source: null, fingerprint: null, http_method: null, http_url: null, http_route: null, http_status: null,
     duration_ms: null, name: null, props: {}, browser: null, os: null, device: null, country: null, region: null, city: null,
-    lat: null, lon: null, ...o,
+    lat: null, lon: null, bot: null, ...o,
   });
 
   beforeAll(async () => {
@@ -72,6 +72,12 @@ d('maintenance (PostgreSQL)', async () => {
         }
       }
     }
+    // bots: excluded from every count, but reported as botSessions
+    for (let h = 2; h <= 40; h += 3) {
+      rows.push(row({ session_id: `bot-${h}`, anon_id: `bot-${h}`, bot: 'user-agent', ts: new Date(thisHour - h * HOUR + 600_000), type: 'pageview', path: '/p0' }));
+      rows.push(row({ session_id: `bot-${h}`, anon_id: `bot-${h}`, bot: 'user-agent', ts: new Date(thisHour - h * HOUR + 660_000), type: 'click', selector: 'a' }));
+    }
+    rows.push(row({ session_id: 'bot-now', bot: 'automation', ts: new Date(now - 30_000), type: 'pageview', path: '/p1' }));
     // not rolled up yet: the current hour
     rows.push(row({ session_id: 's-now', anon_id: 'a-now', browser: 'Chrome', ts: new Date(now - 60_000), type: 'pageview', path: '/p0' }));
     // stored before error_stacks existed: the stack lives on the row
@@ -98,6 +104,13 @@ d('maintenance (PostgreSQL)', async () => {
     R.resetWatermarkCache();
     const again = await R.runRollups(Date.now() + 60_000);
     expect(again.hours).toBe(0);
+  });
+
+  it('long ranges count hidden bot sessions from rollups', async () => {
+    const [rolled, raw] = await Promise.all([A.stats(pid, range), A.stats(pid, { ...range, filters: RAW })]);
+    expect(raw.botSessions).toBe(14); // 13 in rolled-up hours, 1 in the current hour (read raw)
+    expect(rolled.botSessions).toBe(raw.botSessions);
+    expect((await A.stats(pid, { ...range, bots: '1' })).botSessions).toBeUndefined();
   });
 
   it('long ranges from rollups match raw events', async () => {
@@ -127,7 +140,7 @@ d('maintenance (PostgreSQL)', async () => {
     const stat = (k: string) => res.stats.find((s) => s.key === k)!;
     const [raw] = await query<{ pv: number; s: number; u: number }>(
       `SELECT sum(CASE WHEN type = 'pageview' THEN 1 ELSE 0 END)::int AS pv, count(DISTINCT session_id)::int AS s, count(DISTINCT anon_id)::int AS u
-         FROM events WHERE project_id = $1`, [pid]);
+         FROM events WHERE project_id = $1 AND bot IS NULL`, [pid]);
     expect(stat('pageviews').value).toBe(raw.pv); // all data lies within the last 5 days
     expect(stat('pageviews').previous).toBe(0);
     expect(stat('pageviews').series.reduce((a, b) => a + b, 0)).toBe(raw.pv);

@@ -6,7 +6,7 @@ import type {
 import { query } from './db';
 import { stacksFor } from './errorStacks';
 import { toApiEvent, type EventRow } from './events';
-import { COLUMNS, fieldExpression, filtersFrom, parseFilters } from './filters';
+import { COLUMNS, fieldExpression, filtersFrom, parseFilters, includeBots } from './filters';
 import { Hll } from './hll';
 import { HttpError } from './http';
 import { projectRetention } from './retention';
@@ -63,7 +63,7 @@ const ROLLUP_MIN_RANGE_MS = 3 * DAY_MS;
  * per-event fields), and either a long range or one reaching back past the project's raw retention.
  */
 async function rollupPlan(pid: string, r: Range, p: Params): Promise<Plan | null> {
-  if (parseFilters(p.filters).length) return null;
+  if (parseFilters(p.filters).length || includeBots(p)) return null; // rollups hold human traffic only
   if (r.to.getTime() - r.from.getTime() < ROLLUP_MIN_RANGE_MS) {
     const days = await projectRetention(pid);
     if (r.from.getTime() >= Date.now() - days * DAY_MS) return null;
@@ -127,6 +127,26 @@ export async function totalsFor(pid: string, p: Params): Promise<Totals> {
 type SeriesPoint = StatsResponse['series'][number];
 const emptyPoint = (t: number): SeriesPoint => ({ t: new Date(t).toISOString(), pageview: 0, click: 0, error: 0, http_error: 0, custom: 0 });
 
+const rawBotSessions = async (pid: string, span: Window): Promise<number> =>
+  (await query<{ n: number }>(
+    `SELECT count(DISTINCT session_id)::int AS n FROM events WHERE project_id = $1 AND ts >= $2 AND ts < $3 AND bot IS NOT NULL`,
+    [pid, span.from, span.to],
+  ))[0]?.n ?? 0;
+
+/**
+ * Sessions left out as bots in a range, so the dashboard can say how much it's hiding. Long ranges read the
+ * rollups' 'bot' rows (hourly distinct counts summed, so a bot session spanning hours counts once per hour).
+ */
+async function botSessions(pid: string, r: Range, p: Params, plan: Plan | null): Promise<number | undefined> {
+  if (includeBots(p)) return undefined;
+  if (!plan) return rawBotSessions(pid, r);
+  const [rolled, tail] = await Promise.all([
+    rolledDim(pid, 'bot', plan.roll, 'sessions', 50),
+    plan.raw ? rawBotSessions(pid, plan.raw) : Promise.resolve(0),
+  ]);
+  return rolled.reduce((a, b) => a + b.sessions, tail);
+}
+
 /** `compare=0` skips the previous window (the dashboard asks for it separately via /totals). */
 export async function stats(pid: string, p: Params): Promise<StatsResponse> {
   const r = parseRange(p);
@@ -134,6 +154,7 @@ export async function stats(pid: string, p: Params): Promise<StatsResponse> {
   const prevRange = { from: new Date(r.from.getTime() - span), to: r.from };
   const compare = p.compare !== '0' && p.compare !== 'false';
   const plan = await rollupPlan(pid, r, p);
+  const hiddenBots = botSessions(pid, r, p, plan);
   // rollups are hourly: their buckets are at least an hour
   const bucket = plan ? Math.max(pickBucket(r), 3600) : pickBucket(r);
   const byT = new Map<number, SeriesPoint>();
@@ -150,7 +171,7 @@ export async function stats(pid: string, p: Params): Promise<StatsResponse> {
       hourlyTypes(pid, plan),
     ]);
     for (const h of hours) add(Math.floor(h.hour / 1000 / bucket) * bucket * 1000, h.type, h.n);
-    return { bucketSeconds: bucket, totals: current, previous, series: [...byT.values()] };
+    return { bucketSeconds: bucket, totals: current, previous, series: [...byT.values()], botSessions: await hiddenBots };
   }
 
   const seriesParams: unknown[] = [pid, r.from, r.to, bucket];
@@ -166,7 +187,7 @@ export async function stats(pid: string, p: Params): Promise<StatsResponse> {
     ),
   ]);
   for (const row of rows) add(row.t.getTime(), row.type, row.n);
-  return { bucketSeconds: bucket, totals: current, previous, series: [...byT.values()] };
+  return { bucketSeconds: bucket, totals: current, previous, series: [...byT.values()], botSessions: await hiddenBots };
 }
 
 export async function clicks(pid: string, p: Params): Promise<ClickRow[]> {

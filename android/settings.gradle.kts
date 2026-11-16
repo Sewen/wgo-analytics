@@ -12,5 +12,5 @@ dependencyResolutionManagement {
         mavenCentral()
     }
 }
-rootProject.name = "analytico-android"
+rootProject.name = "wgo-android"
 include(":app")

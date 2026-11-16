@@ -35,6 +35,10 @@ export function useFilters(scope: FilterScope): [Filter[], (next: Filter[]) => v
   return [filters, setFilters];
 }
 
+/** Product analytics leave bot traffic out unless the URL says bots=1 (API param `bots`). */
+export const botsParam = (): '1' | undefined =>
+  parseRoute(window.location.hash.replace(/^#/, '') || '/').params.get('bots') === '1' ? '1' : undefined;
+
 /** API param for the current filters of a scope (undefined when none, so query keys stay stable). */
 export function filtersParam(scope: FilterScope): string | undefined {
   const f = currentFilters(scope);
@@ -47,7 +51,7 @@ const LABELS: Record<string, string> = {
   errorSource: 'Error source', fingerprint: 'Error fingerprint', httpMethod: 'HTTP method', httpUrl: 'HTTP URL',
   httpRoute: 'HTTP route', httpStatus: 'HTTP status', durationMs: 'Duration (ms)', name: 'Name', sessionId: 'Session ID',
   anonId: 'Anonymous ID', userId: 'User ID', browser: 'Browser', os: 'OS', device: 'Device', country: 'Country',
-  region: 'Region', city: 'City', lat: 'Latitude', lon: 'Longitude', body: 'Message', service: 'Service',
+  region: 'Region', city: 'City', lat: 'Latitude', lon: 'Longitude', bot: 'Bot reason', body: 'Message', service: 'Service',
   severityText: 'Severity', severityNumber: 'Severity number', traceId: 'Trace ID', spanId: 'Span ID',
   statusCode: 'Status code', statusMessage: 'Status message', kind: 'Span kind',
 };

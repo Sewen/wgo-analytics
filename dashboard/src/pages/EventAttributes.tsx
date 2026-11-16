@@ -6,7 +6,7 @@ import { useAddFilter } from '../ui/FilterBar';
 
 /** Built-in event fields shown when expanding a row (the order is the reading order). */
 const FIELDS: Array<keyof AnalyticsEvent> = [
-  'type', 'name', 'path', 'url', 'title', 'referrer', 'trackName', 'elementText', 'elementTag', 'selector',
+  'bot', 'type', 'name', 'path', 'url', 'title', 'referrer', 'trackName', 'elementText', 'elementTag', 'selector',
   'errorMessage', 'errorSource', 'fingerprint', 'httpMethod', 'httpUrl', 'httpRoute', 'httpStatus', 'durationMs',
   'userId', 'sessionId', 'anonId', 'browser', 'os', 'device', 'country', 'region', 'city', 'lat', 'lon',
 ];

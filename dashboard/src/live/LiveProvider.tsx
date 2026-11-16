@@ -3,7 +3,7 @@ import { useEffect, useMemo, type ReactNode } from 'react';
 import { LiveCtx, LiveStore } from './store';
 import { useToast } from '../ui/kit';
 
-export const LIVE_PREFS = 'analytico.live.prefs';
+export const LIVE_PREFS = 'wgo.live.prefs';
 export function readPrefs(): { toasts: boolean; notify: boolean } {
   try { return { toasts: false, notify: false, ...JSON.parse(localStorage.getItem(LIVE_PREFS) ?? '{}') }; } catch { return { toasts: false, notify: false }; }
 }

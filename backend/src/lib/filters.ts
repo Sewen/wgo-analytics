@@ -22,6 +22,7 @@ export const COLUMNS: Record<FilterScope, Record<string, Column>> = {
     name: col('name'), sessionId: col('session_id'), anonId: col('anon_id'), userId: col('user_id'),
     browser: col('browser'), os: col('os'), device: col('device'),
     country: col('country'), region: col('region'), city: col('city'), lat: col('lat', 'number'), lon: col('lon', 'number'),
+    bot: col('bot'),
   },
   logs: {
     body: col('body'), service: col('service'), severityText: col('severity_text'), severityNumber: col('severity_number', 'number'),
@@ -136,5 +137,9 @@ export function filterSql(filters: Filter[], scope: FilterScope, params: unknown
 
 /** Parse the `filters` request param and compile it in one go. */
 export function filtersFrom(p: Record<string, string | undefined>, scope: FilterScope, params: unknown[]): string {
-  return filterSql(parseFilters(p.filters), scope, params);
+  // bot traffic is left out of product analytics unless explicitly included
+  const bots = scope === 'events' && !includeBots(p) ? ' AND bot IS NULL' : '';
+  return filterSql(parseFilters(p.filters), scope, params) + bots;
 }
+
+export const includeBots = (p: Record<string, string | undefined>) => p.bots === '1' || p.bots === 'true';

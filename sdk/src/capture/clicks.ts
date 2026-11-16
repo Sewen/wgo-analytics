@@ -3,8 +3,8 @@ import { on } from '../util'
 import { selector } from '../selector'
 
 const TARGET =
-  'a,button,[role=button],[role=link],[role=menuitem],[role=tab],input[type=button],input[type=submit],input[type=checkbox],input[type=radio],select,summary,label,[data-track],[data-wgo],[data-analytico]'
-const MASKED = '[contenteditable=""],[contenteditable="true"],[data-wgo-mask],[data-analytico-mask]'
+  'a,button,[role=button],[role=link],[role=menuitem],[role=tab],input[type=button],input[type=submit],input[type=checkbox],input[type=radio],select,summary,label,[data-track],[data-wgo]'
+const MASKED = '[contenteditable=""],[contenteditable="true"],[data-wgo-mask]'
 const FIELD = 'input,textarea,select'
 const SENSITIVE = /pass|pwd|secret|token|cvv|ssn/i
 const BLOCK = /^(ADDRESS|ARTICLE|ASIDE|BLOCKQUOTE|BR|DD|DIV|DL|DT|FIELDSET|FIGCAPTION|FIGURE|FOOTER|FORM|H[1-6]|HEADER|HR|LI|MAIN|NAV|OL|P|PRE|SECTION|TABLE|TBODY|TD|TFOOT|TH|THEAD|TR|UL|OPTION|SELECT)$/
@@ -72,7 +72,7 @@ export function startClicks(h: Hooks): () => void {
 
   return on(document, 'click', (e: MouseEvent) => {
     const raw = e.target as Element | null
-    if (!raw || raw.nodeType !== 1 || raw.closest('[data-wgo-ignore],[data-analytico-ignore]')) return
+    if (!raw || raw.nodeType !== 1 || raw.closest('[data-wgo-ignore]')) return
     const el = raw.closest(TARGET) || raw
     const now = Date.now()
 
@@ -89,7 +89,7 @@ export function startClicks(h: Hooks): () => void {
       return
     }
 
-    const named = el.closest('[data-track],[data-wgo],[data-analytico]')
+    const named = el.closest('[data-track],[data-wgo]')
     const d: ClickData = {
       sel: selector(el),
       tag: el.tagName.toLowerCase(),
@@ -100,7 +100,7 @@ export function startClicks(h: Hooks): () => void {
     }
     const text = labelOf(el)
     if (text) d.text = text
-    const name = named && (named.getAttribute('data-track') || named.getAttribute('data-wgo') || named.getAttribute('data-analytico'))
+    const name = named && (named.getAttribute('data-track') || named.getAttribute('data-wgo'))
     if (name) d.name = name
     if (el.tagName === 'A') {
       const href = (el as HTMLAnchorElement).href

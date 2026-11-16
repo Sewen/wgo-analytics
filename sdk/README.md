@@ -77,7 +77,7 @@ Only `writeKey` and `endpoint` are required.
 | `maxBatchBytes` | `60000` | Max serialized batch size; ~80% queued flushes |
 | `maxQueueSize` | `1000` | Queue cap; oldest events are dropped first |
 | `maxRetries` | `6` | Retries before a batch is dropped (backoff 1s, 2s, 4s ... capped at 60s, with jitter) |
-| `persist` | `true` | Mirror the unsent queue to `localStorage` (`analytico:q:<writeKey>`) |
+| `persist` | `true` | Mirror the unsent queue to `localStorage` (`wgo:q:<writeKey>`) |
 | `sessionTimeout` | `1800000` | Inactivity (ms) after which a new session starts |
 | `sampleRate` | `1` | 0..1, decided once per session |
 | `httpIgnore` | `[]` | Strings (substring match) or RegExps of URLs never reported |
@@ -149,9 +149,3 @@ Types are exported from the package (`WireEvent`, `Batch`, `Ctx`, `Config`, ...)
 ```sh
 npm install && npm run typecheck && npm test && npm run build
 ```
-
-## Pre-rename names
-
-WGO was briefly called Analytico. The old names still work: `window.Analytico`, `window.AnalyticoConfig`,
-`data-analytico`, `data-analytico-ignore`, `data-analytico-mask`, and the `sdk/v1/analytico.js` URL.
-Storage keys keep the `analytico:` prefix, so visitors' ids survive the rename.

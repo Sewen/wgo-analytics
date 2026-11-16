@@ -19,7 +19,7 @@ function useTheme() {
   const [t, setT] = useState<'dark' | 'light'>(() => (document.documentElement.dataset.theme as 'dark' | 'light') || 'dark');
   const toggle = () => {
     const n = t === 'dark' ? 'light' : 'dark';
-    document.documentElement.dataset.theme = n; localStorage.setItem('analytico.theme', n); setT(n);
+    document.documentElement.dataset.theme = n; localStorage.setItem('wgo.theme', n); setT(n);
   };
   return [t, toggle] as const;
 }

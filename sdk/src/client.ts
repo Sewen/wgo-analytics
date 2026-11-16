@@ -1,5 +1,6 @@
 import type { Config, Ctx, EmitOpts, EventType, Hooks, ResolvedConfig, WireEvent } from './types'
 import { SDK } from './types'
+import { migrateStorage } from './legacy'
 import { Session } from './session'
 import { Transport } from './transport'
 import { startClicks } from './capture/clicks'
@@ -50,11 +51,13 @@ export class Client {
     const cfg = (this.cfg = resolve(config))
     const log = (...a: unknown[]) => { if (cfg.debug) console.debug('[wgo]', ...a) }
     this.ingest = `${cfg.endpoint}/ingest`
+    migrateStorage(cfg.writeKey)
     this.session = new Session(cfg.sessionTimeout, cfg.sampleRate)
     this.ctx = { sdk: SDK }
     try {
       Object.assign(this.ctx, { ua: navigator.userAgent, lang: navigator.language, sw: screen.width, sh: screen.height })
       this.ctx.tz = Intl.DateTimeFormat().resolvedOptions().timeZone
+      if (navigator.webdriver) this.ctx.wd = true // automated browser: the backend flags it as a bot
     } catch { /* partial ctx is fine */ }
     if (cfg.release) this.ctx.release = cfg.release
     if (cfg.environment) this.ctx.env = cfg.environment
@@ -62,7 +65,7 @@ export class Client {
     this.transport = new Transport({
       ...cfg,
       url: this.ingest,
-      storageKey: `analytico:q:${cfg.writeKey}`,
+      storageKey: `wgo:q:${cfg.writeKey}`,
       meta: () => ({ k: cfg.writeKey, a: this.session.aid, ctx: this.ctx }),
       log,
     })
