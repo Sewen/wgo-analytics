@@ -29,6 +29,7 @@ export function CommandPalette({ open, onClose, toggleTheme }: { open: boolean; 
     { id: 'p-settings', label: 'Go to Settings', group: 'Pages', icon: <PageIcon id="settings" size={15} />, hint: 'g s', run: () => navigate(pageHref(project.id, 'settings', route.params)) },
     { id: 'p-kiosks', label: 'Kiosks: show the dashboard on a TV', group: 'Pages', icon: <PageIcon id="kiosks" size={15} />, run: () => navigate(pageHref(project.id, 'kiosks', route.params)) },
     { id: 'p-widget', label: 'Android widget: download & connect', group: 'Pages', icon: <PageIcon id="widget" size={15} />, run: () => navigate(pageHref(project.id, 'widget', route.params)) },
+    { id: 'p-mcp', label: 'AI assistants: connect Claude, VS Code or Cursor over MCP', group: 'Pages', icon: <PageIcon id="mcp" size={15} />, run: () => navigate(pageHref(project.id, 'mcp', route.params)) },
     ...(views.data ?? []).map((v) => ({ id: 'v-' + v.id, label: `Open view: ${v.name} · ${PAGES.find((p) => p.id === v.page)?.label ?? v.page}`, group: 'Saved views', icon: <Bookmark size={15} />, run: () => navigate(viewHref(project.id, v, route.params)) })),
     ...PRESETS.map((r) => ({ id: 'r-' + r, label: `Time range: last ${r}`, group: 'Time range', icon: <Clock size={15} />, run: () => setParams({ range: r === '24h' ? null : r, from: null, to: null }) })),
     ...projects.map((p) => ({ id: 'pr-' + p.id, label: `Switch to ${p.name}`, group: 'Projects', icon: <FolderKanban size={15} />, run: () => navigate(`/p/${p.id}/overview`) })),

@@ -5,5 +5,6 @@
   "sdkUrl": "https://d1example.cloudfront.net/sdk/v1/wgo.js",
   "region": "eu-west-1",
   "userPoolId": "eu-west-1_EXAMPLE",
-  "userPoolClientId": "exampleclientid1234567890"
+  "userPoolClientId": "exampleclientid1234567890",
+  "mcpUrl": "https://d1example.cloudfront.net/mcp"
 }

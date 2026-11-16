@@ -24,6 +24,7 @@ import { MetricsPage } from './pages/Metrics';
 import { SettingsPage } from './pages/Settings';
 import { WidgetPage } from './pages/Widget';
 import { KiosksPage } from './pages/Kiosks';
+import { McpPage } from './pages/Mcp';
 import { OtelDocs } from './docs/OtelDocs';
 
 function Authed({ email }: { email: string }) {
@@ -63,6 +64,7 @@ function Authed({ email }: { email: string }) {
       case 'settings': return <SettingsPage />;
       case 'widget': return <WidgetPage />;
       case 'kiosks': return <KiosksPage />;
+      case 'mcp': return <McpPage />;
       default: return <Overview />;
     }
   })();

@@ -22,6 +22,8 @@ export interface RuntimeConfig {
   mapStyleUrlLight?: string;
   /** Email domains allowed to sign up (empty/absent = anyone); shown as a hint on the sign-up screen. */
   allowedEmailDomains?: string[];
+  /** The MCP server for AI assistants (the McpUrl stack output, e.g. https://wgo.example.com/mcp); empty or absent when MCP is turned off. */
+  mcpUrl?: string;
 }
 
 // ---------- accounts & projects ----------

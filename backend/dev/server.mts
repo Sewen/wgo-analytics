@@ -105,7 +105,7 @@ createServer(async (req, res) => {
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
           apiUrl: origin, ingestUrl: origin, wsUrl: 'ws://localhost:1/no-live-locally', sdkUrl: `${origin}/sdk/dist/wgo.js`,
-          region: 'local', userPoolId: 'local', userPoolClientId: 'local', devEmail: DEV_EMAIL,
+          region: 'local', userPoolId: 'local', userPoolClientId: 'local', devEmail: DEV_EMAIL, mcpUrl: `${origin}/mcp`,
         }),
       });
     }

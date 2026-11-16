@@ -101,7 +101,7 @@ export function Shell({ page, children }: { page: string; children: ReactNode })
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
   }, [project.id, paramsKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const title = page === 'settings' ? 'Settings' : page === 'widget' ? 'Mobile widget' : page === 'kiosks' ? 'Kiosks' : PAGES.find((p) => p.id === page)?.label ?? '';
+  const title = page === 'settings' ? 'Settings' : page === 'widget' ? 'Mobile widget' : page === 'kiosks' ? 'Kiosks' : page === 'mcp' ? 'AI assistants (MCP)' : PAGES.find((p) => p.id === page)?.label ?? '';
   const groups = ['Product', 'Observability'] as const;
 
   const navItem = (id: string, label: string) => (
@@ -135,6 +135,7 @@ export function Shell({ page, children }: { page: string; children: ReactNode })
           <div className="space-y-1 border-t border-line pt-3">
             {navItem('kiosks', 'Kiosks')}
             {navItem('widget', 'Mobile widget')}
+            {navItem('mcp', 'AI assistants (MCP)')}
             {navItem('settings', 'Settings')}
             <div className={cn('flex items-center gap-2 rounded-lg px-2 py-1.5', collapsed && 'justify-center px-0')}>
               {collapsed ? (
@@ -173,7 +174,7 @@ export function Shell({ page, children }: { page: string; children: ReactNode })
   );
 }
 
-const NO_HISTORY_PAGES = new Set(['settings', 'widget', 'live']);
+const NO_HISTORY_PAGES = new Set(['settings', 'widget', 'live', 'mcp']);
 
 /** Shown when the range reaches back past the project's raw data. */
 function RetentionNote({ page, range }: { page: string; range: TimeRange }) {

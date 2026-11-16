@@ -166,6 +166,9 @@ step "Dashboard: build"
 cd "$ROOT/dashboard"
 npm ci --no-audit --no-fund
 npm run build
+# the dashboard's MCP page shows setup instructions only when the server is on
+MCP_CONFIG_URL=""
+if [ -n "$MCP_URL" ] && [ "$MCP_URL" != "None" ] && [ "$MCP_STATE" != "false" ]; then MCP_CONFIG_URL="$MCP_URL"; fi
 cat > dist/config.json <<JSON
 {
   "apiUrl": "$API_URL",
@@ -175,7 +178,8 @@ cat > dist/config.json <<JSON
   "region": "$AWS_REGION",
   "userPoolId": "$USER_POOL_ID",
   "userPoolClientId": "$USER_POOL_CLIENT_ID",
-  "allowedEmailDomains": [$ALLOWLIST_JSON]
+  "allowedEmailDomains": [$ALLOWLIST_JSON],
+  "mcpUrl": "$MCP_CONFIG_URL"
 }
 JSON
 

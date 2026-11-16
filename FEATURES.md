@@ -7,7 +7,7 @@
 WGO collects clicks, pageviews, errors and Web Vitals from the browser, and traces, logs and metrics from your
 backends over OpenTelemetry. It all lands in one dashboard that updates as it happens.
 
-[Web analytics](#live-web-analytics) · [OpenTelemetry](#opentelemetry-metrics-traces-and-logs) · [Android](#a-home-screen-widget-for-android) · [MCP](#ask-your-ai-assistant-with-mcp) · [Deploy it yourself](README.md#deploy-it-yourself)
+[Web analytics](#live-web-analytics) · [OpenTelemetry](#opentelemetry-metrics-traces-and-logs) · [Android](#a-home-screen-widget-for-android) · [Wall screens](#your-dashboard-on-a-wall-screen) · [MCP](#ask-your-ai-assistant-with-mcp) · [Deploy it yourself](README.md#deploy-it-yourself)
 
 </div>
 
@@ -83,6 +83,26 @@ metric.
 </td>
 </tr>
 </table>
+
+---
+
+## Your dashboard on a wall screen
+
+Put a project on a TV in the office. Create a kiosk in the dashboard and run the one command it shows on a
+Raspberry Pi. The Pi starts straight into the dashboard, full screen, and you control it from WGO without
+touching the Pi again.
+
+- 🖥️ Every page fits the screen, with no scrolling. Taller pages zoom out, and the widgets move side by side to
+  use the width. The Overview fits on a 1080p TV at about 75%. Long lists such as Events and Logs show their
+  newest rows at full size.
+- 🔁 Show one page or rotate through several, each with its own time range, filters and caption. Or set up any
+  page as you like and click **Show on kiosk**.
+- 🔒 The screen needs no sign-in. Its link gives read-only access to one project, and you can replace the link at
+  any time.
+- 🔌 It runs unattended. It waits for the network at boot, keeps showing the last data while offline and
+  restarts the browser if it exits.
+
+See [Kiosk screens](README.md#kiosk-screens-your-dashboard-on-a-tv) for the setup.
 
 ---
 

@@ -159,7 +159,7 @@ export function Landing() {
             points={[
               'You sign in with your WGO account in the browser. There is no API key to copy.',
               'Access is read-only and limited to the projects you are a member of.',
-              'Sixteen tools cover the overview, top pages and clicks, errors, failed requests, Web Vitals, visitor locations, traces, logs and metrics.',
+              'Seventeen tools cover the overview, top pages and clicks, conversion goals, errors, failed requests, Web Vitals, visitor locations, traces, logs and metrics.',
             ]}
             extra={<CodeBlock lang="sh" title="Claude Code" code={`claude mcp add --transport http wgo ${origin}/mcp`} />}
             media={<McpExample />} />

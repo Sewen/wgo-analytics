@@ -84,8 +84,23 @@ The Pi boots straight into the dashboard, full screen, and you control it from W
 - **No sign-in on the screen.** The kiosk URL holds a long random token, which gives read access to that project's
   analytics and nothing else. Members can see the link, and can replace it if it leaks or delete the kiosk.
 - **Unattended.** It waits for the network at boot, keeps showing the last data while offline, keeps the display awake,
-  hides the pointer and scrolls pages taller than the screen. The browser restarts if it exits, and once a night.
+  hides the pointer and fits every page to the screen. The browser restarts if it exits, and once a night.
   The status (on screen, last seen, resolution) shows on the Kiosks page.
+
+#### Every page fits the screen
+
+A kiosk page never scrolls. When a page is taller than the screen, the kiosk zooms it out until it fits, down to
+30%. Zooming out also gives the page more room across, so the widgets move side by side, just as they do on a
+wider monitor. The page doesn't only get smaller. On a 1080p TV the Overview fits at about 75%, with the widgets
+three across. On a small 1024×600 panel it needs about 40%.
+
+- **The zoom setting is the largest size.** A page that fits at the kiosk's zoom (100% by default) shows at that
+  size. Only taller pages are zoomed out.
+- **Long lists are cut off instead.** Events, Logs and Traces are too long to fit at any size. They show at full
+  size with the newest rows at the top, and the rest is cut off at the bottom.
+- **It follows the content.** When data loads or a list grows, the page zooms out further. Every 30 seconds it
+  checks whether it can zoom back in. On a small screen, a page with fewer widgets (Live, Errors, Clicks) shows
+  larger than the Overview.
 
 The script works on Raspberry Pi OS Bookworm or newer, Lite or Desktop, on a Pi 3, 4, 5 or Zero 2 W. It runs
 Chromium in [cage](https://github.com/cage-kiosk/cage), a compositor for a single full-screen app, as an
@@ -376,7 +391,7 @@ claude mcp add --transport http wgo https://wgo.example.com/mcp
 
 There is no key to copy. The client registers itself, opens a browser, and you sign in with your WGO account.
 It then sees exactly the projects you're a member of, read-only. The tools are:
-- **Product analytics:** `list_projects`, `get_overview`, `top_clicks`, `top_pages`, `list_errors`, `list_failed_requests`, `breakdown`, `web_vitals`, `visitor_locations`, `search_events`
+- **Product analytics:** `list_projects`, `get_overview`, `top_clicks`, `top_pages`, `goal_conversions`, `list_errors`, `list_failed_requests`, `breakdown`, `web_vitals`, `visitor_locations`, `search_events`
 - **OpenTelemetry:** `list_services`, `list_traces`, `get_trace`, `search_logs`, `list_metrics`, `get_metric_series`
 
 Use the dashboard's host (the `McpUrl` stack output). The raw API Gateway URL has no OAuth resource of its own.
