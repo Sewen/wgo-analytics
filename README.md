@@ -419,23 +419,15 @@ Registered clients are not cleaned up automatically. List them with
 
 ## How it works
 
-```
- Browser (SDK, ~9 KB gz)                     Your services (any OTel SDK)
-   │  batched, gzip, beacon on unload            │  OTLP/HTTP  (protobuf or JSON)
-   ▼                                             ▼
- ┌──────── CloudFront (your domain) · dashboard, SDK, /ingest, /v1/* · adds IP geolocation ────────┐
- └────┬──────────────────────────┬─────────────────────────────────────────────────────────────────┘
-      ▼                          ▼                                    GET/POST /api/*  (Cognito JWT)
-  Ingest λ ──fan-out──┐      API Gateway ─▶ SQS ─▶ OTLP λ              API λ (+ DuckDB)
-      │               │                               │                  │        │
-      ▼ SQS ─▶ writer λ                               ▼                  │        ▼
- ┌──── S3: Parquet (events · spans · logs · metric_points), per project and day ◀─┘  Aurora DSQL
- └──────────────────────────────────────────────────────────────────────────────┘  (projects, settings,
-                      │                                                             rollups, error stacks)
-     API Gateway WebSocket (live) ◀── matching events pushed to subscribed dashboards
-                      ▼                (connections + watches in DynamoDB)
-   Dashboard (React) ── accounts via Cognito (optional email-domain allowlist)
-```
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
+  <img alt="WGO architecture: web apps and OpenTelemetry services send data through CloudFront to API Gateway; Lambdas queue it in SQS and write Parquet to S3; a maintenance Lambda compacts it and rolls it up into Aurora DSQL; the dashboard, widget, kiosks and MCP clients query it through Lambdas running DuckDB, and get live events over a WebSocket API" src="docs/architecture-light.svg">
+</picture>
+
+The SDK and OTLP intake answer as soon as the data is queued (OTLP requests go from API Gateway straight to
+SQS, with no Lambda in the request path); Lambdas behind SQS write each batch to S3 as Parquet. Queries run
+DuckDB inside the Lambda against only the project's files for the days in range, and long ranges use the
+hourly rollups in DSQL. The sections below cover each part.
 
 **Buffering (SDK).** Events queue in memory, mirrored to `localStorage`. A batch goes out when it reaches 50
 events or ~48 KB, or when the oldest queued event is 5 s old (a max-latency deadline that new events never
