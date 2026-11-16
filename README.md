@@ -543,7 +543,16 @@ cd backend && npm run test:integration   # full API + ingest + OTLP against Post
   `UpdateUserPool`. It runs again whenever the pool's settings change. If you edit `UserPool` in the
   template, bump `PoolConfigVersion` in `McpAuth`.
 
+## Sponsor WGO
+
+WGO is free, open source and built in my spare time. If it saves you from paying for a hosted analytics or
+observability service, or you just like having your data in your own account, please consider sponsoring
+its development. Sponsorships pay for the time that goes into new features, fixes and keeping up with AWS.
+
+<a href="https://github.com/sponsors/ljacobsson"><img src="https://img.shields.io/badge/Sponsor-❤-db61a2?style=for-the-badge&logo=githubsponsors&logoColor=white" alt="Sponsor WGO on GitHub"></a>
+
+Not in a position to sponsor? Starring the repo, reporting bugs and telling others about WGO help too.
+
 ## License
 
 [MIT](LICENSE)
-# wgo-analytics
