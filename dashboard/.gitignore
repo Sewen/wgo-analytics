@@ -1,3 +1,5 @@
 node_modules
 dist
-public/downloads/
+# build-android.sh output; the kiosk script next to them is source
+public/downloads/wgo-android.apk
+public/downloads/android.json

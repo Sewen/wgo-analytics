@@ -89,7 +89,8 @@ if [ "$FRONTEND_ONLY" = false ]; then
   npm ci --no-audit --no-fund
   npm run typecheck
   npx vitest run --exclude 'test/integration.*'
-  sam build
+  # SAM's esbuild builder looks for esbuild on PATH; use the project's own (a devDependency)
+  PATH="$ROOT/backend/node_modules/.bin:$PATH" sam build
 
   overrides=()
   [ -n "$CUSTOM_DOMAIN" ] && overrides+=("CustomDomain=$CUSTOM_DOMAIN" "CertificateArn=$CERTIFICATE_ARN")
@@ -184,6 +185,8 @@ cat > dist/config.json <<JSON
   "mcpUrl": "$MCP_CONFIG_URL"
 }
 JSON
+# check before uploading anything, so a broken checkout can't leave a half-uploaded site
+[ -f dist/downloads/wgo-kiosk.sh ] || die "dashboard/public/downloads/wgo-kiosk.sh is missing from the build"
 
 step "Upload to s3://$BUCKET"
 # hashed assets are immutable; the shell, config and SDK must revalidate
