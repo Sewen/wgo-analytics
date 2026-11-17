@@ -27,6 +27,18 @@ describe('script-tag auto-init', () => {
     expect(b.e[0].t).toBe('pageview')
   })
 
+  it('data-cookieless keeps everything off localStorage', async () => {
+    localStorage.clear()
+    mockFetch()
+    const s = document.createElement('script')
+    Object.assign(s.dataset, { writeKey: 'wk_auto', endpoint: 'https://api.test', cookieless: '' })
+    Object.defineProperty(document, 'currentScript', { value: s, configurable: true })
+    const mod = await import('../src/auto')
+    mod.identify('user-1')
+    await mod.flush()
+    expect(localStorage.length).toBe(0)
+  })
+
   it('stays idle without a write key', async () => {
     const f = mockFetch()
     await import('../src/auto')

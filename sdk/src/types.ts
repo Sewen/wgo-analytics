@@ -52,6 +52,8 @@ export interface Config {
   maxBatchBytes?: number
   maxQueueSize?: number
   maxRetries?: number
+  /** Keep ids, session and queue in memory only; nothing is stored on the device. Overrides `persist`. */
+  cookieless?: boolean
   persist?: boolean
   sessionTimeout?: number
   sampleRate?: number

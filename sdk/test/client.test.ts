@@ -269,6 +269,43 @@ describe('session', () => {
   })
 })
 
+describe('cookieless', () => {
+  it('never reads or writes localStorage, even with persist on; ids still hold within the page', async () => {
+    localStorage.setItem('wgo:aid', 'stored-aid')
+    localStorage.setItem('wgo:uid', 'stored-uid')
+    localStorage.setItem('analytico:aid', 'legacy-aid')
+    const snapshot = () => Object.fromEntries(Object.keys(localStorage).map((k) => [k, localStorage.getItem(k)]))
+    const before = snapshot()
+    const f = mockFetch()
+    A.init(cfg({ cookieless: true, persist: true, autocapture: { ...NO_AUTO, pageviews: true } }))
+    A.identify('user-1')
+    A.track('a')
+    await vi.advanceTimersByTimeAsync(5000)
+    expect(snapshot()).toEqual(before)
+    const b = batchOf(ingestCalls(f)[0])
+    expect(b.a).not.toBe('stored-aid')
+    const [pv, idt, cu] = b.e
+    expect(pv.u).toBeUndefined()
+    expect(idt.u).toBe('user-1')
+    expect(cu.u).toBe('user-1')
+    expect(new Set(b.e.map((e) => e.s)).size).toBe(1)
+  })
+
+  it('a new page load starts a new anonymous id and session', async () => {
+    const f = mockFetch()
+    A.init(cfg({ cookieless: true }))
+    A.track('a')
+    await A.flush()
+    A.shutdown()
+    A.init(cfg({ cookieless: true }))
+    A.track('b')
+    await A.flush()
+    const [x, y] = ingestCalls(f).map(batchOf)
+    expect(x.a).not.toBe(y.a)
+    expect(x.e[0].s).not.toBe(y.e[0].s)
+  })
+})
+
 describe('uuid', () => {
   it('falls back when crypto.randomUUID is unavailable', () => {
     vi.stubGlobal('crypto', { getRandomValues: (b: Uint8Array) => b.fill(7) })

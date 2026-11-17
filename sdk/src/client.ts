@@ -8,7 +8,7 @@ import { ErrorReporter } from './capture/errors'
 import { startHttp } from './capture/http'
 import { startPageviews } from './capture/pageviews'
 import { startVitals } from './capture/vitals'
-import { on, uuid } from './util'
+import { ls, memoryStore, on, uuid } from './util'
 
 function resolve(c: Config): ResolvedConfig {
   const a = c.autocapture || {}
@@ -22,7 +22,8 @@ function resolve(c: Config): ResolvedConfig {
     maxBatchBytes: c.maxBatchBytes ?? 60000,
     maxQueueSize: c.maxQueueSize ?? 1000,
     maxRetries: c.maxRetries ?? 6,
-    persist: c.persist ?? true,
+    cookieless: c.cookieless ?? false,
+    persist: !c.cookieless && (c.persist ?? true),
     sessionTimeout: c.sessionTimeout ?? 30 * 60 * 1000,
     sampleRate: c.sampleRate ?? 1,
     httpIgnore: c.httpIgnore ?? [],
@@ -51,8 +52,8 @@ export class Client {
     const cfg = (this.cfg = resolve(config))
     const log = (...a: unknown[]) => { if (cfg.debug) console.debug('[wgo]', ...a) }
     this.ingest = `${cfg.endpoint}/ingest`
-    migrateStorage(cfg.writeKey)
-    this.session = new Session(cfg.sessionTimeout, cfg.sampleRate)
+    if (!cfg.cookieless) migrateStorage(cfg.writeKey)
+    this.session = new Session(cfg.sessionTimeout, cfg.sampleRate, cfg.cookieless ? memoryStore() : ls)
     this.ctx = { sdk: SDK }
     try {
       Object.assign(this.ctx, { ua: navigator.userAgent, lang: navigator.language, sw: screen.width, sh: screen.height })

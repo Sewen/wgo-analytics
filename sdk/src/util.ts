@@ -26,6 +26,18 @@ export const ls = {
   },
 }
 
+export type Store = typeof ls
+
+/** Same interface as `ls`, but lives and dies with the page: nothing touches the device. */
+export function memoryStore(): Store {
+  const m = new Map<string, string>()
+  return {
+    get: (k) => m.get(k) ?? null,
+    set: (k, v) => { m.set(k, v); return true },
+    del: (k) => { m.delete(k) },
+  }
+}
+
 /** addEventListener whose handler can never throw into the host page. Returns the remover. */
 export function on(t: EventTarget, type: string, fn: (e: any) => void, capture = false): () => void {
   const w = (e: Event) => { try { fn(e) } catch { /* never throw into the host */ } }

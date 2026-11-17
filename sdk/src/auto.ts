@@ -27,6 +27,7 @@ function fromScript(s: HTMLScriptElement | null): Config | null {
     environment: d.environment,
     captureQueryParams: flag(d.captureQueryParams),
     respectDoNotTrack: flag(d.respectDoNotTrack),
+    cookieless: flag(d.cookieless),
   }
 }
 

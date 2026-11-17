@@ -21,6 +21,7 @@ The script auto-initialises from its own tag and exposes `window.WGO`. Supported
 | `data-release` / `data-environment` | Attached to every batch (`ctx.release`, `ctx.env`) |
 | `data-capture-query-params` | Keep query strings in captured URLs |
 | `data-respect-do-not-track` | Disable entirely when the browser sends DNT |
+| `data-cookieless` | Store nothing on the device (see `cookieless` below) |
 
 ```js
 WGO.track('signup_clicked', { plan: 'pro' })
@@ -77,6 +78,7 @@ Only `writeKey` and `endpoint` are required.
 | `maxBatchBytes` | `60000` | Max serialized batch size; ~80% queued flushes |
 | `maxQueueSize` | `1000` | Queue cap; oldest events are dropped first |
 | `maxRetries` | `6` | Retries before a batch is dropped (backoff 1s, 2s, 4s ... capped at 60s, with jitter) |
+| `cookieless` | `false` | Keep the anonymous id, session and user id in memory and never touch `localStorage`. Every page load is a new visitor and session; call `identify()` on each load. Forces `persist: false` |
 | `persist` | `true` | Mirror the unsent queue to `localStorage` (`wgo:q:<writeKey>`) |
 | `sessionTimeout` | `1800000` | Inactivity (ms) after which a new session starts |
 | `sampleRate` | `1` | 0..1, decided once per session |
