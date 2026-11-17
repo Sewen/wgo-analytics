@@ -108,7 +108,7 @@ export function WidgetPage() {
         <Step n={1} title="Install the app">
           {build.isPending ? <Skeleton className="h-24" /> : !build.data ? (
             <p className="text-[13px] text-muted">
-              The Android app hasn't been built for this deployment. Run <code className="font-mono text-fg">scripts/build-android.sh</code> (needs JDK 17 and the Android SDK) and deploy again.
+              The Android app isn't part of this deployment. Deploy again with <code className="font-mono text-fg">scripts/deploy.sh</code>, which uploads it.
             </p>
           ) : (
             <div className="flex flex-wrap items-start gap-5">

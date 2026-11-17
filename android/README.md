@@ -49,12 +49,18 @@ Widget refresh (WorkManager, 15–180 min, or ↻) ─▶ GET {apiUrl}/widget/v1
 ```
 
 You need JDK 17+ and the Android SDK (platform 35). The script looks in `$JAVA_HOME`/`$ANDROID_HOME`, then
-`~/.local/opt/jdk17` and `~/Android/Sdk`. `scripts/deploy.sh` runs it automatically and skips it when no toolchain
-is found.
+`~/.local/opt/jdk17` and `~/Android/Sdk`.
+
+The built APK and `android.json` are committed. The app learns its server from the pairing link, so one build works
+for every deployment, and `scripts/deploy.sh` uploads the committed APK. To rebuild during a deploy, set
+`BUILD_ANDROID=true`. After changing the app, rebuild it and commit both files.
 
 **Signing key:** the first build creates `android/keystore/` (gitignored). Every later build must be signed with
 the same key, or installed apps refuse the update. **Back that directory up.** The application id is set once in
 `gradle.properties` (`wgo.applicationId`); changing it later produces a separate app.
+
+A deployment that rebuilds with its own key ships an APK that can't update an app installed from the committed
+one: phones refuse the update until that app is uninstalled. Pick one source per deployment and stick to it.
 
 ## Local development
 

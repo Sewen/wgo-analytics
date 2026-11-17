@@ -19,7 +19,7 @@
 #   SLACK_CLIENT_ID        optional: one Slack app for "Add to Slack" in every project (otherwise each project
 #   SLACK_CLIENT_SECRET    sets it up from its Triggers page in about a minute)
 #   PARAMS                 extra raw `sam deploy --parameter-overrides`
-#   SKIP_ANDROID           true = don't rebuild the Android widget APK (the last uploaded one stays live)
+#   BUILD_ANDROID          true = rebuild the Android widget APK (default: deploy the one committed in the repo)
 #
 #   ./scripts/deploy.sh                    full deploy
 #   ./scripts/deploy.sh --frontend-only    only rebuild + upload dashboard and SDK (no SAM, ~30 s)
@@ -151,18 +151,11 @@ cd "$ROOT/sdk"
 npm ci --no-audit --no-fund
 npm run build
 
-step "Android widget app"
-# Built into dashboard/public/downloads so the dashboard serves it. Needs JDK 17 + Android SDK;
-# without them the previously uploaded APK (if any) stays live.
-if [ "${SKIP_ANDROID:-false}" = true ]; then
-  echo "SKIP_ANDROID=true: not rebuilding the APK"
-else
-  rc=0; "$ROOT/scripts/build-android.sh" || rc=$?
-  if [ "$rc" = 3 ]; then
-    printf '\033[1;33m! No Android toolchain: skipping the APK build (see scripts/build-android.sh)\033[0m\n'
-  elif [ "$rc" != 0 ]; then
-    exit "$rc"
-  fi
+# The APK in dashboard/public/downloads is committed: it pairs with any deployment, so rebuilding is opt-in
+# (needs JDK 17 + the Android SDK, and see scripts/build-android.sh about the signing key).
+if [ "${BUILD_ANDROID:-false}" = true ]; then
+  step "Android widget app: build"
+  "$ROOT/scripts/build-android.sh" || die "Android build failed (exit code 3 = no JDK 17 / Android SDK found)"
 fi
 
 step "Dashboard: build"
@@ -186,7 +179,9 @@ cat > dist/config.json <<JSON
 }
 JSON
 # check before uploading anything, so a broken checkout can't leave a half-uploaded site
-[ -f dist/downloads/wgo-kiosk.sh ] || die "dashboard/public/downloads/wgo-kiosk.sh is missing from the build"
+for f in wgo-kiosk.sh wgo-android.apk android.json; do
+  [ -f "dist/downloads/$f" ] || die "dashboard/public/downloads/$f is missing from the build"
+done
 
 step "Upload to s3://$BUCKET"
 # hashed assets are immutable; the shell, config and SDK must revalidate
@@ -197,12 +192,10 @@ aws s3 cp dist/pair.html "s3://$BUCKET/pair.html" --cache-control 'no-cache' --c
 # Raspberry Pi kiosk setup (curl … | sudo bash): served as text so browsers show it instead of downloading it
 aws s3 cp dist/downloads/wgo-kiosk.sh "s3://$BUCKET/downloads/wgo-kiosk.sh" --cache-control 'no-cache' --content-type 'text/plain; charset=utf-8'
 # the APK keeps a fixed name so links and QR codes stay valid; android.json describes the current build
-if [ -f dist/downloads/wgo-android.apk ]; then
-  aws s3 cp dist/downloads/wgo-android.apk "s3://$BUCKET/downloads/wgo-android.apk" \
-    --cache-control 'no-cache' --content-type 'application/vnd.android.package-archive' \
-    --content-disposition 'attachment; filename="wgo-android.apk"'
-  aws s3 cp dist/downloads/android.json "s3://$BUCKET/downloads/android.json" --cache-control 'no-cache' --content-type 'application/json'
-fi
+aws s3 cp dist/downloads/wgo-android.apk "s3://$BUCKET/downloads/wgo-android.apk" \
+  --cache-control 'no-cache' --content-type 'application/vnd.android.package-archive' \
+  --content-disposition 'attachment; filename="wgo-android.apk"'
+aws s3 cp dist/downloads/android.json "s3://$BUCKET/downloads/android.json" --cache-control 'no-cache' --content-type 'application/json'
 aws s3 cp dist/index.html "s3://$BUCKET/index.html" --cache-control 'no-cache' --content-type 'text/html'
 aws s3 cp dist/config.json "s3://$BUCKET/config.json" --cache-control 'no-cache' --content-type 'application/json'
 aws s3 cp "$ROOT/sdk/dist/wgo.js" "s3://$BUCKET/sdk/v1/wgo.js" \
