@@ -1,0 +1,13 @@
+{
+  "name": "wgo",
+  "private": true,
+  "description": "WGO: self-hosted live web analytics and OpenTelemetry on AWS",
+  "scripts": {
+    "setup": "node scripts/setup.mjs",
+    "deploy": "bash scripts/deploy.sh",
+    "deploy:frontend": "bash scripts/deploy.sh --frontend-only"
+  },
+  "engines": {
+    "node": ">=22"
+  }
+}
