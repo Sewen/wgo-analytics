@@ -9,6 +9,7 @@ afterEach(async () => {
   Object.defineProperty(document, 'currentScript', { value: null, configurable: true })
   delete (window as { WGOConfig?: unknown }).WGOConfig
   document.querySelectorAll('script[data-write-key]').forEach((s) => s.remove())
+  localStorage.clear() // sessions (and their sampling decision) must not leak into the next test
   vi.useRealTimers()
 })
 
@@ -37,6 +38,28 @@ describe('script-tag auto-init', () => {
     mod.identify('user-1')
     await mod.flush()
     expect(localStorage.length).toBe(0)
+  })
+
+  it('data-autocapture turns off the kinds it does not list', async () => {
+    const f = mockFetch()
+    const s = document.createElement('script')
+    Object.assign(s.dataset, { writeKey: 'wk_auto', endpoint: 'https://api.test', autocapture: 'clicks, errors' })
+    Object.defineProperty(document, 'currentScript', { value: s, configurable: true })
+    const mod = await import('../src/auto')
+    mod.track('only_this')
+    await mod.flush()
+    expect(f.mock.calls.flatMap((c) => batchOf(c).e).map((e) => e.t)).toEqual(['custom']) // no pageview
+  })
+
+  it('data-sample-rate="0" sends nothing', async () => {
+    const f = mockFetch()
+    const s = document.createElement('script')
+    Object.assign(s.dataset, { writeKey: 'wk_auto', endpoint: 'https://api.test', sampleRate: '0' })
+    Object.defineProperty(document, 'currentScript', { value: s, configurable: true })
+    const mod = await import('../src/auto')
+    mod.track('dropped')
+    await mod.flush()
+    expect(f).not.toHaveBeenCalled()
   })
 
   it('stays idle without a write key', async () => {

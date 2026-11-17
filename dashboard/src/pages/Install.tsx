@@ -3,20 +3,33 @@ import { getConfig } from '../api/config';
 import type { Project } from '../api/contract';
 import { CodeBlock } from '../ui/CodeBlock';
 import { Segmented } from '../ui/kit';
+import { DEFAULT_OPTIONS, npmSnippet, scriptSnippet, SnippetOptionsPanel } from './SnippetOptions';
 
 export function Install({ project }: { project: Project }) {
   const cfg = getConfig();
   const key = project.writeKey;
   const [tab, setTab] = useState<'script' | 'npm' | 'track' | 'otel'>('script');
   const [proto, setProto] = useState<'http/protobuf' | 'http/json'>('http/protobuf');
+  const [opts, setOpts] = useState(DEFAULT_OPTIONS);
 
-  const script = `<script src="${cfg.sdkUrl}" data-write-key="${key}" data-endpoint="${cfg.ingestUrl}" async></script>`;
-  const npmFmt = `import { init } from 'wgo-sdk';
+  const script = scriptSnippet(opts, cfg.sdkUrl, key, cfg.ingestUrl);
+  const npmFmt = npmSnippet(opts, key, cfg.ingestUrl);
+  const remembered = opts.cookieless ? 'Cookieless: call it on every page load.' : "It's remembered on this browser until reset().";
+  const identifyScript = `<script>
+  // When a user logs in. ${remembered}
+  WGO.identify(user.email);
 
-init({
-  writeKey: '${key}',
-  endpoint: '${cfg.ingestUrl}',
-});`;
+  // When they log out
+  WGO.reset();
+</script>`;
+  const identifyNpm = `import { identify, reset } from 'wgo-sdk';
+
+// When a user logs in. ${remembered}
+identify(user.email);
+
+// When they log out
+reset();`;
+  const identifyCode = tab === 'npm' ? identifyNpm : identifyScript;
   const track = `<!-- Name a click: it shows up as a track name in Clicks -->
 <button data-track="signup-cta">Start free trial</button>
 
@@ -29,12 +42,6 @@ init({
 <script>
   // Custom events from code
   WGO.track('checkout_completed', { plan: 'pro', value: 49 });
-
-  // Who is logged in. Their events from before the login count as theirs too.
-  // Or add data-auto-identify to the script tag to read the email from your app's JWT.
-  WGO.identify('jane@example.com');
-  // On logout
-  WGO.reset();
 </script>`;
   const env = `OTEL_EXPORTER_OTLP_ENDPOINT=${cfg.ingestUrl}
 OTEL_EXPORTER_OTLP_HEADERS=x-wgo-key=${key}
@@ -72,6 +79,23 @@ trace.set_tracer_provider(provider)`;
       <Segmented value={tab} onChange={setTab} options={[{ value: 'script', label: 'Script tag' }, { value: 'npm', label: 'npm' }, { value: 'track', label: 'Tracking clicks' }, { value: 'otel', label: 'OpenTelemetry' }]} />
       {tab === 'script' && (<div className="space-y-2"><p className="text-[12.5px] text-muted">Paste before <code className="font-mono">&lt;/head&gt;</code>. Clicks, pageviews, errors, failed requests and web vitals are captured automatically.</p><CodeBlock code={script} lang="html" title="index.html" /></div>)}
       {tab === 'npm' && (<div className="space-y-3"><p className="text-[12.5px] text-muted">The package isn't on npm yet. Build it from <code className="font-mono">sdk/</code> in the WGO repo and install it locally.</p><CodeBlock code="npm i ./path/to/wgo/sdk" lang="sh" title="terminal" /><CodeBlock code={npmFmt} lang="js" title="main.ts" /></div>)}
+      {(tab === 'script' || tab === 'npm') && (
+        <>
+          <div className="space-y-3 border-t border-line pt-4">
+            <div className="flex items-baseline justify-between gap-3">
+              <h4 className="text-[13px] font-semibold">Options</h4>
+              {opts !== DEFAULT_OPTIONS && <button className="text-[12px] text-muted hover:text-fg cursor-pointer" onClick={() => setOpts(DEFAULT_OPTIONS)}>Reset to defaults</button>}
+            </div>
+            <p className="text-[12.5px] text-muted">The snippet above updates as you change these.</p>
+            <SnippetOptionsPanel value={opts} onChange={setOpts} />
+          </div>
+          <div className="space-y-2 border-t border-line pt-4">
+            <h4 className="text-[13px] font-semibold">Identify users from your code</h4>
+            <p className="text-[12.5px] text-muted">Pass your own user id, such as an email or an internal id, when someone logs in. Their earlier anonymous events on that browser count as theirs too.</p>
+            <CodeBlock code={identifyCode} lang={tab === 'npm' ? 'js' : 'html'} title={tab === 'npm' ? 'auth.ts' : 'page.html'} />
+          </div>
+        </>
+      )}
       {tab === 'track' && (<div className="space-y-2"><p className="text-[12.5px] text-muted">Add attributes to steer what gets recorded, or send custom events yourself.</p><CodeBlock code={track} lang="html" title="page.html" /></div>)}
       {tab === 'otel' && (
         <div className="space-y-3">

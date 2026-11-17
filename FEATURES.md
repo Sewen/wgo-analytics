@@ -150,14 +150,17 @@ response body is empty.
 
 ## Your data stays in your AWS account
 
-WGO is open source and runs on Lambda, S3, Aurora DSQL, DynamoDB and CloudFront in the account it's deployed to.
-It scales to zero when nobody is using it.
+WGO is open source and runs on API Gateway, SQS, Lambda, S3, Aurora DSQL, DynamoDB and CloudFront in the account it's
+deployed to. It scales to zero when nobody is using it. Incoming data is queued the moment it arrives, so your pages and
+services never wait for it to be processed.
 
 ```mermaid
 flowchart LR
   B["🌐 Your web app<br/>WGO SDK"] --> CF["CloudFront<br/>your domain"]
   S["⚙️ Your services<br/>OpenTelemetry"] --> CF
-  CF --> L["Lambda"]
+  CF --> API["API Gateway"]
+  API --> Q["SQS"]
+  Q --> L["Lambda"]
   L --> D[("S3 (Parquet)<br/>+ Aurora DSQL")]
   L -- live events --> W["WebSocket"]
   W --> UI["📊 Dashboard"]
@@ -166,6 +169,8 @@ flowchart LR
   D --> M["🤖 MCP clients"]
   subgraph AWS["Your AWS account"]
     CF
+    API
+    Q
     L
     D
     W

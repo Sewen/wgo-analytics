@@ -10,7 +10,7 @@ metrics land in the same project. Everything shows up in one dashboard that upda
 ![The WGO overview page: pageviews, sessions, users, clicks and errors with sparklines, events over time, Web Vitals and a visitor map](dashboard/public/home/overview.jpg)
 
 - **Your data stays in your AWS account.** Nothing is sent to a third party, IP addresses are never stored,
-  and no cookies are set ([details](#cookies-and-privacy)).
+  and no cookies are set; cookieless mode doesn't use `localStorage` either ([details](#cookies-and-privacy)).
 - **Serverless, scales to zero.** Lambda, API Gateway, S3 (Parquet, queried with DuckDB), Aurora DSQL, DynamoDB,
   Cognito and CloudFront. There
   are no servers or databases to patch, and an idle install costs close to nothing.
@@ -362,6 +362,16 @@ forward cookies to the backend either, so cookies your own site sets on the same
 | `wgo:um` | `1` when the user id came from `identify()`, so a JWT doesn't replace it | Same as `wgo:uid` |
 | `wgo:q:<writeKey>` | Events that haven't been sent yet, e.g. while offline | They are delivered. Turn off with `persist: false` |
 
+**Storing nothing: cookieless mode.** Add `data-cookieless` to the script tag (or `cookieless: true` with npm)
+and the SDK keeps everything above in memory, so it writes nothing to `localStorage`, `sessionStorage` or
+cookies. The trade-offs:
+- Every page load is a new visitor and a new session, so visitor and session counts go up and multi-page
+  journeys (funnels, paths) break at each full page load. Single-page apps keep one session while the tab
+  stays open.
+- Events that couldn't be sent before the page closed (e.g. offline) are lost.
+- Logged-in users must be identified again on every page load: call `WGO.identify()` each time, or use
+  `data-auto-identify`.
+
 **What is collected.** With each event: the anonymous id, the session id, the page URL and referrer (query
 strings stripped unless `captureQueryParams` is on), browser, OS and device type (parsed from the user agent,
 which itself is not stored), language, screen size and time zone, and a city-level location from CloudFront.
@@ -389,6 +399,10 @@ privacy for your site. If you need consent first:
   ```
 - `data-respect-do-not-track` (or `respectDoNotTrack: true`) turns the SDK off for browsers that send Do Not
   Track.
+- [Cookieless mode](#cookies-and-privacy) stores nothing on the device. That removes the storage these rules
+  are about, but whether it is enough for your site is still a question for whoever handles privacy.
+  `data-auto-identify` reads your app's tokens from storage and cookies, so leave it off if the point is not
+  to touch the device at all.
 
 **The dashboard** keeps your sign-in tokens in `sessionStorage`, or in `localStorage` if you tick "Keep me
 signed in", plus a few display preferences in `localStorage`. MCP sign-in goes through Cognito's managed login

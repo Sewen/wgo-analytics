@@ -23,6 +23,14 @@ The script auto-initialises from its own tag and exposes `window.WGO`. Supported
 | `data-respect-do-not-track` | Disable entirely when the browser sends DNT |
 | `data-cookieless` | Store nothing on the device (see `cookieless` below) |
 | `data-auto-identify` | Identify logged-in users from your app's JWT (see [Identifying users](#identifying-users)) |
+| `data-autocapture` | Comma-separated kinds to capture: `pageviews,clicks,errors,http,vitals`. Unlisted kinds are off; absent = all |
+| `data-sample-rate` | `0`..`1`, share of sessions recorded |
+| `data-session-timeout` | Inactivity in ms after which a new session starts |
+| `data-http-ignore` | Comma-separated URL substrings never reported as failed requests |
+| `data-priority-clicks` | A CSS selector list; matching clicks are sent within a second (for realtime watches) |
+| `data-persist="false"` / `data-compress="false"` | Turn off `persist` / `compress` |
+
+The dashboard's install page builds this tag for you: tick the options you want and copy it.
 
 ```js
 WGO.track('signup_clicked', { plan: 'pro' })
@@ -93,6 +101,24 @@ copies share one client. If you can't put attributes on the tag, set a global be
 If nothing shows up, run `WGO.status()` in the browser console. It returns
 `{ initialized, disabled, endpoint, queued }`. When the SDK loads without finding any configuration, it
 logs a `[wgo] loaded but not initialised` warning. Add `data-debug` to the tag to log every send.
+
+## Cookieless mode
+
+```html
+<script src="…/wgo.js" data-write-key="wk_…" data-endpoint="https://…" data-cookieless async></script>
+```
+
+or `init({ …, cookieless: true })`. The SDK sets no cookies in any mode. With `cookieless` it also writes
+nothing to `localStorage` or `sessionStorage`: the anonymous id, session and user id live in memory, and unsent
+events aren't saved (`persist` is forced off). The cost:
+
+* Every page load is a new visitor and session, so visitor and session counts go up and funnels and paths
+  break at full page loads. A single-page app keeps one session while the tab is open.
+* Events still queued when the page closes while offline are lost.
+* Identified users are forgotten on reload: call `identify()` on every page load.
+
+`autoIdentify` still works in this mode, but it reads your app's tokens from storage and cookies. Leave it
+off if the SDK shouldn't touch the device's storage at all.
 
 ## Config
 
