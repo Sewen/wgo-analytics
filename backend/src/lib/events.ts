@@ -84,6 +84,23 @@ const str = (v: unknown, max = 2048): string | null => {
 const num = (v: unknown): number | null => (typeof v === 'number' && Number.isFinite(v) ? v : null);
 const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
+/** A v4-shaped UUID derived from `seed`: the same input always gets the same id. */
+export function stableUuid(seed: string): string {
+  const h = createHash('sha256').update(seed).digest('hex');
+  return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${((parseInt(h[16], 16) & 3) | 8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+}
+
+/**
+ * Gives events without a valid id one derived from `sourceId` (e.g. an SQS message id) and their position, so a
+ * redelivered batch maps to the same rows and compaction drops the duplicates. The SDK always sends ids.
+ */
+export function fillMissingIds(batch: WireBatch, sourceId: string): void {
+  if (!batch || !Array.isArray(batch.e)) return;
+  batch.e.forEach((e, i) => {
+    if (e && typeof e === 'object' && !(typeof e.id === 'string' && uuidRe.test(e.id))) e.id = stableUuid(`${sourceId}:${i}`);
+  });
+}
+
 /** Normalize an SDK batch into event rows. Invalid events are dropped, never the whole batch. */
 export function normalizeBatch(projectId: string, batch: WireBatch, receivedAt = Date.now(), userAgentHeader?: string, geo: Geo = NO_GEO): EventRow[] {
   if (!batch || !Array.isArray(batch.e)) return [];

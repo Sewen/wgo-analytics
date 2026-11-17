@@ -28,6 +28,7 @@ function fromScript(s: HTMLScriptElement | null): Config | null {
     captureQueryParams: flag(d.captureQueryParams),
     respectDoNotTrack: flag(d.respectDoNotTrack),
     cookieless: flag(d.cookieless),
+    autoIdentify: flag(d.autoIdentify),
   }
 }
 

@@ -58,41 +58,42 @@ function icon(name, x, y, size, t) {
 }
 
 // ------------------------------------------------------------------ layout grid
-const X = [96, 256, 396, 526, 656, 786, 940, 1104, 1290];
+const X = [96, 256, 396, 526, 656, 786, 916, 1070, 1234, 1420];
 const Y = { live: 132, web: 262, mid: 342, otlp: 422, maint: 502, low: 642 };
 const S = 52; // icon size
-const W = 1400, H = 770;
+const W = 1530, H = 770;
 const LINE = 17; // label line height
-const LANE = { toApi: 326, toData: 858, toQuery: 1022 }; // vertical edge lanes between columns
+const LANE = { toApi: 326, toQueues: 465, toData: 988, toQuery: 1152 }; // vertical edge lanes between columns
 
 // label lines: [bold title, ...grey sub-lines]
 const nodes = [
   { id: 'sdk', icon: 'client', x: X[0], y: Y.web, label: ['Your web app', 'WGO SDK, ~9 KB'] },
   { id: 'otel', icon: 'servers', x: X[0], y: Y.otlp, label: ['Your services', 'any OpenTelemetry SDK'] },
   { id: 'notify', icon: 'chat', x: X[0], y: Y.low, label: ['Slack · webhooks', 'trigger alerts'] },
-  { id: 'readers', icon: 'users', x: X[8], y: Y.mid, label: ['You and your team', 'dashboard · widget', 'kiosks · AI via MCP'] },
+  { id: 'readers', icon: 'users', x: X[9], y: Y.mid, label: ['You and your team', 'dashboard · widget', 'kiosks · AI via MCP'] },
 
   { id: 'static', icon: 's3', x: X[1], y: Y.live, label: ['S3', 'dashboard + SDK'] },
   { id: 'cf', icon: 'cloudfront', x: X[1], y: Y.mid, label: ['CloudFront', 'your domain', 'geo at the edge'] },
 
-  { id: 'http', icon: 'apigw', x: X[2], y: Y.web, label: ['HTTP API', '/ingest'] },
-  { id: 'ingest', icon: 'lambda', x: X[3], y: Y.web, label: ['Ingest'] },
-  { id: 'eventsq', icon: 'sqs', x: X[4], y: Y.web, label: ['SQS', 'events'] },
-  { id: 'writer', icon: 'lambda', x: X[5], y: Y.web, label: ['Writer'] },
+  // API Gateway writes SDK batches and OTLP requests straight to SQS: no Lambda in the request path
+  { id: 'rest', icon: 'apigw', x: X[2], y: Y.mid, label: ['REST API', '/ingest · /v1/*'] },
+  { id: 'ingestq', icon: 'sqs', x: X[3], y: Y.web, label: ['SQS', 'SDK batches'] },
+  { id: 'ingest', icon: 'lambda', x: X[4], y: Y.web, label: ['Ingest'] },
+  { id: 'eventsq', icon: 'sqs', x: X[5], y: Y.web, label: ['SQS', 'events'] },
+  { id: 'writer', icon: 'lambda', x: X[6], y: Y.web, label: ['Writer'] },
 
-  { id: 'rest', icon: 'apigw', x: X[2], y: Y.otlp, label: ['REST API', '/v1/*'] },
-  { id: 'otlpq', icon: 'sqs', x: X[4], y: Y.otlp, label: ['SQS', 'OTLP'] },
-  { id: 'otlp', icon: 'lambda', x: X[5], y: Y.otlp, label: ['OTLP'] },
+  { id: 'otlpq', icon: 'sqs', x: X[3], y: Y.otlp, label: ['SQS', 'OTLP'] },
+  { id: 'otlp', icon: 'lambda', x: X[6], y: Y.otlp, label: ['OTLP'] },
 
-  { id: 'trigger', icon: 'lambda', x: X[3], y: Y.low, label: ['Trigger'] },
+  { id: 'trigger', icon: 'lambda', x: X[4], y: Y.low, label: ['Trigger'] },
 
-  { id: 'data', icon: 's3', x: X[6], y: Y.mid, label: ['S3 · Parquet', 'events · spans', 'logs · metrics'] },
-  { id: 'maint', icon: 'lambda', x: X[6], y: Y.maint, label: ['Maintenance', 'every 15 min'], badge: 'eventbridge' },
-  { id: 'dsql', icon: 'aurora', x: X[6], y: Y.low, label: ['Aurora DSQL', 'projects · settings', 'hourly rollups'] },
+  { id: 'data', icon: 's3', x: X[7], y: Y.mid, label: ['S3 · Parquet', 'events · spans', 'logs · metrics'] },
+  { id: 'maint', icon: 'lambda', x: X[7], y: Y.maint, label: ['Maintenance', 'every 15 min'], badge: 'eventbridge' },
+  { id: 'dsql', icon: 'aurora', x: X[7], y: Y.low, label: ['Aurora DSQL', 'projects · settings', 'hourly rollups'] },
 
-  { id: 'ws', icon: 'apigw', x: X[7], y: Y.live, label: ['WebSocket API', 'live · DynamoDB'], badge: 'dynamodb' },
-  { id: 'query', icon: 'lambda', x: X[7], y: Y.mid, label: ['API · MCP', 'widget · kiosk', 'in-process DuckDB'] },
-  { id: 'cognito', icon: 'cognito', x: X[7], y: Y.low, label: ['Cognito', 'accounts'] },
+  { id: 'ws', icon: 'apigw', x: X[8], y: Y.live, label: ['WebSocket API', 'live · DynamoDB'], badge: 'dynamodb' },
+  { id: 'query', icon: 'lambda', x: X[8], y: Y.mid, label: ['API · MCP', 'widget · kiosk', 'in-process DuckDB'] },
+  { id: 'cognito', icon: 'cognito', x: X[8], y: Y.low, label: ['Cognito', 'accounts'] },
 ];
 const N = Object.fromEntries(nodes.map((n) => [n.id, n]));
 const half = S / 2;
@@ -108,18 +109,18 @@ const edges = [
   { pts: [R(N.sdk), [178, Y.web], [178, Y.mid - 10], L(N.cf, -10)] },
   { pts: [R(N.otel), [178, Y.otlp], [178, Y.mid + 10], L(N.cf, 10)] },
   { pts: [T(N.cf), B(N.static)] },
-  { pts: [R(N.cf, -10), [LANE.toApi, Y.mid - 10], [LANE.toApi, Y.web], L(N.http)] },
-  { pts: [R(N.cf, 10), [LANE.toApi, Y.mid + 10], [LANE.toApi, Y.otlp], L(N.rest)] },
+  { pts: [R(N.cf), L(N.rest)] },
 
-  { pts: [R(N.http), L(N.ingest)] },
+  { pts: [R(N.rest, -10), [LANE.toQueues, Y.mid - 10], [LANE.toQueues, Y.web], L(N.ingestq)] },
+  { pts: [R(N.rest, 10), [LANE.toQueues, Y.mid + 10], [LANE.toQueues, Y.otlp], L(N.otlpq)] },
+  { pts: [R(N.ingestq), L(N.ingest)] },
   { pts: [R(N.ingest), L(N.eventsq)] },
   { pts: [R(N.eventsq), L(N.writer)] },
   { pts: [R(N.writer), [LANE.toData, Y.web], [LANE.toData, Y.mid - 10], L(N.data, -10)] },
-  { pts: [R(N.rest), L(N.otlpq)] },
   { pts: [R(N.otlpq), L(N.otlp)] },
   { pts: [R(N.otlp), [LANE.toData, Y.otlp], [LANE.toData, Y.mid + 10], L(N.data, 10)] },
 
-  { pts: [T(N.ingest), [N.ingest.x, Y.live], L(N.ws)], label: ['matching events, pushed live', 760, Y.live - 13] },
+  { pts: [T(N.ingest), [N.ingest.x, Y.live], L(N.ws)], label: ['matching events, pushed live', (N.ingest.x + N.ws.x) / 2, Y.live - 13] },
   { pts: [B(N.ingest), T(N.trigger)], dashed: true },
   { pts: [B(N.otlp), [N.otlp.x, Y.low], R(N.trigger)], dashed: true },
   { pts: [L(N.trigger), R(N.notify)], dashed: true },
@@ -129,9 +130,9 @@ const edges = [
   { pts: [L(N.query, -10), R(N.data, -10)] },
   { pts: [L(N.query, 10), [LANE.toQuery, Y.mid + 10], [LANE.toQuery, Y.low], R(N.dsql)] },
 
-  { pts: [T(N.readers), [X[8], Y.live], R(N.ws)] },
+  { pts: [T(N.readers), [X[9], Y.live], R(N.ws)] },
   { pts: [L(N.readers), R(N.query)] },
-  { pts: [B(N.readers), [X[8], Y.low], R(N.cognito)], label: ['sign in', X[8], (labelBottom(N.readers) + Y.low) / 2] },
+  { pts: [B(N.readers), [X[9], Y.low], R(N.cognito)], label: ['sign in', X[9], (labelBottom(N.readers) + Y.low) / 2] },
 ];
 
 // ------------------------------------------------------------------ rendering
@@ -175,15 +176,15 @@ function render(themeName) {
 <rect width="${W}" height="${H}" rx="14" fill="${t.bg}"/>`);
 
   // AWS account boundary (AWS Cloud group style: logo in the corner, solid outline)
-  const ax = 184, ay = 28, aw = 1012, ah = H - 50;
+  const ax = 184, ay = 28, aw = 1142, ah = H - 50;
   out.push(`<rect x="${ax}" y="${ay}" width="${aw}" height="${ah}" fill="none" stroke="${t.cloud}" stroke-width="1.4"/>`);
   out.push(icon('cloudLogo', ax, ay, 30, t));
   out.push(`<text x="${ax + 40}" y="${ay + 20}" class="title">Your AWS account</text>`);
 
   const gBottom = H - 32;
-  out.push(group(t, 342, 196, 504, 318, 'INTAKE'));
-  out.push(group(t, 868, 276, 144, gBottom - 276, 'STORAGE'));
-  out.push(group(t, 1030, 62, 148, gBottom - 62, 'SERVE'));
+  out.push(group(t, 342, 196, 634, 318, 'INTAKE'));
+  out.push(group(t, 998, 276, 144, gBottom - 276, 'STORAGE'));
+  out.push(group(t, 1160, 62, 148, gBottom - 62, 'SERVE'));
 
   for (const e of edges) {
     out.push(`<path d="${roundedPath(e.pts)}" class="edge${e.dashed ? ' dashed' : ''}" marker-end="url(#arrow)"/>`);

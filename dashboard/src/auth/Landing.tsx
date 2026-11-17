@@ -128,7 +128,7 @@ export function Landing() {
             points={[
               'Watch a button, page or error and see each hit arrive, with an optional toast or browser notification.',
               'A live map shows where visitors are, to the nearest city. Locations come from CloudFront, and IP addresses are never stored.',
-              'The browser SDK is about 9 KB gzipped. It batches and compresses events, and holds on to them while the visitor is offline.',
+              'The browser SDK is about 10 KB gzipped. It batches and compresses events, and holds on to them while the visitor is offline.',
             ]}
             media={<Shot src="live.jpg" alt="The Live page: click counters for the signup button, add to cart and checkout, and a world map with recent events at each location" w={2416} h={2000} />} />
 

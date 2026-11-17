@@ -1,4 +1,4 @@
-import { createHash } from 'node:crypto';
+import { stableUuid } from '../events';
 import type { LogRecord, Span } from '../../contract';
 import { HttpError } from '../http';
 import { writeRows } from '../store/write';
@@ -55,8 +55,7 @@ export function decodeOtlp(signal: Signal, projectId: string, body: Buffer, prot
 export function assignStableIds(rows: OtlpRow[], sourceId: string): void {
   rows.forEach((row, i) => {
     if (!('id' in row)) return;
-    const h = createHash('sha256').update(`${sourceId}:${i}`).digest('hex');
-    row.id = `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-${((parseInt(h[16], 16) & 3) | 8).toString(16)}${h.slice(17, 20)}-${h.slice(20, 32)}`;
+    row.id = stableUuid(`${sourceId}:${i}`);
   });
 }
 

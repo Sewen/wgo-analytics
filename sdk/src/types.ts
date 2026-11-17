@@ -66,6 +66,8 @@ export interface Config {
   environment?: string
   debug?: boolean
   priorityClicks?: string[]
+  /** Use the email (or username) in the app's JWT as the user id. Off by default: it's personal data. */
+  autoIdentify?: boolean
 }
 
 export type ResolvedConfig = Required<Omit<Config, 'beforeSend' | 'release' | 'environment' | 'autocapture'>> &
@@ -81,4 +83,6 @@ export interface Hooks {
   skipUrl(absUrl: string): boolean
   clean(url: string): string
   log(...a: unknown[]): void
+  /** an outgoing request's Authorization header (only set with autoIdentify) */
+  onAuth?(value: string): void
 }

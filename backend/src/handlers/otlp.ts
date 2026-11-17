@@ -1,5 +1,5 @@
 import type { APIGatewayProxyEventV2, APIGatewayProxyResultV2, SQSBatchResponse, SQSEvent } from 'aws-lambda';
-import { gunzipIfNeeded, handleError, header, HttpError, json, rawBody } from '../lib/http';
+import { gunzipIfNeeded, handleError, header, HttpError, json, metaFields, rawBody } from '../lib/http';
 import { assignStableIds, decodeOtlp, evaluateOtlpTriggers, isProtobuf, isSignal, storeOtlpRows, writeKeyFrom, type OtlpRow, type Signal } from '../lib/otlp/ingest';
 import { projectIdForWriteKey } from '../lib/projects';
 
@@ -30,16 +30,12 @@ export async function handler(event: APIGatewayProxyEventV2): Promise<APIGateway
 }
 
 /**
- * An SQS message written by the API Gateway integration (template.yaml, OtlpApi): the body is the request
+ * An SQS message written by the API Gateway integration (template.yaml, IntakeApi /v1/{signal}): the body is the request
  * body, base64-encoded; the `meta` attribute holds `name=value` lines with the signal (from the path), the
  * write key (`key` from the query string) and the request headers that matter, lower-cased.
  */
 export function parseQueuedRequest(body: string, meta: string | undefined) {
-  const fields = new Map<string, string>();
-  for (const line of (meta ?? '').split('\n')) {
-    const i = line.indexOf('=');
-    if (i > 0 && !fields.has(line.slice(0, i))) fields.set(line.slice(0, i), line.slice(i + 1));
-  }
+  const fields = metaFields(meta);
   return {
     signal: fields.get('signal'),
     protobuf: isProtobuf(fields.get('content-type')),

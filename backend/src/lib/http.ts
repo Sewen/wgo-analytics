@@ -34,6 +34,19 @@ export function gunzipIfNeeded(buf: Buffer): Buffer {
   return buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b ? gunzipSync(buf, { maxOutputLength: 20 * 1024 * 1024 }) : buf;
 }
 
+/**
+ * The `meta` attribute of a message that an API Gateway → SQS mapping template (template.yaml) wrote: `name=value`
+ * lines, names lower-cased. The first value of a name wins.
+ */
+export function metaFields(meta: string | undefined): Map<string, string> {
+  const fields = new Map<string, string>();
+  for (const line of (meta ?? '').split('\n')) {
+    const i = line.indexOf('=');
+    if (i > 0 && !fields.has(line.slice(0, i))) fields.set(line.slice(0, i), line.slice(i + 1));
+  }
+  return fields;
+}
+
 export function jsonBody<T = unknown>(event: APIGatewayProxyEventV2): T {
   const buf = rawBody(event);
   if (!buf.length) return {} as T;

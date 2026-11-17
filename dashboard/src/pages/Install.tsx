@@ -29,6 +29,12 @@ init({
 <script>
   // Custom events from code
   WGO.track('checkout_completed', { plan: 'pro', value: 49 });
+
+  // Who is logged in. Their events from before the login count as theirs too.
+  // Or add data-auto-identify to the script tag to read the email from your app's JWT.
+  WGO.identify('jane@example.com');
+  // On logout
+  WGO.reset();
 </script>`;
   const env = `OTEL_EXPORTER_OTLP_ENDPOINT=${cfg.ingestUrl}
 OTEL_EXPORTER_OTLP_HEADERS=x-wgo-key=${key}

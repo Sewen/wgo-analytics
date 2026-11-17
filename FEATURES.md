@@ -32,7 +32,7 @@ without any extra code. Events show up within seconds.
   journeys with their conversion rate.
 - 🗺️ A live map shows where visitors are, to the nearest city. Locations come from CloudFront, and IP addresses
   are never stored.
-- 🪶 The browser SDK is about 9 KB gzipped. It batches and compresses events, and holds on to them while the
+- 🪶 The browser SDK is about 10 KB gzipped. It batches and compresses events, and holds on to them while the
   visitor is offline.
 
 ```html

@@ -261,6 +261,38 @@ d('integration (PostgreSQL)', async () => {
     expect(found[0]).toMatchObject({ service: 'queued', severityNumber: 13 });
   });
 
+  it('ingests SDK batches from the queue once, and drops ones with an unknown write key or invalid JSON', async () => {
+    const { queueHandler } = await import('../src/handlers/ingest');
+    const { rawQuery } = await import('../src/lib/store/duck');
+    const count = async () => (await rawQuery<{ n: number }>(pid, { from: new Date(0), to: new Date(now + 86400e3) },
+      "SELECT count(*)::int AS n FROM events WHERE project_id = $1 AND session_id = 'sess-queued'", [pid]))[0].n;
+    // queued three days ago (kept out of the other tests' time windows; ts limits apply to the queue time).
+    // The second event has no id: it gets one derived from the message id, so redelivery doesn't duplicate it.
+    const sent = now - 3 * 86400e3;
+    const events = [
+      { id: crypto.randomUUID(), t: 'pageview', ts: sent - 30_000, s: 'sess-queued', url: 'https://shop.test/q', path: '/q' },
+      { t: 'click', ts: sent - 29_000, s: 'sess-queued', url: 'https://shop.test/q', path: '/q', d: { sel: 'a.q', tag: 'a', text: 'Q' } },
+    ];
+    const batch = { a: 'anon-q', sentAt: sent, ctx: { ua: 'Mozilla/5.0 (Windows NT 10.0) Chrome/131 Safari/537.36' }, e: events };
+    const record = (messageId: string, body: Buffer, meta: string) => ({
+      messageId, body: body.toString('base64'), attributes: { SentTimestamp: String(sent) }, messageAttributes: { meta: { stringValue: meta, dataType: 'String' } },
+    });
+    const event = (...records: ReturnType<typeof record>[]) => ({ Records: records }) as never;
+
+    // write key from the query string, gzipped body, located by CloudFront
+    const good = record('q-1', gzipSync(JSON.stringify(batch)), `source=sdk\nk=${writeKey}\ncloudfront-viewer-country=SE`);
+    const unknownKey = record('q-2', Buffer.from(JSON.stringify({ ...batch, k: 'wk_doesnotexist123' })), 'source=sdk');
+    const invalid = record('q-3', Buffer.from('{nope'), `source=sdk\nk=${writeKey}`);
+    expect(await queueHandler(event(good, unknownKey, invalid))).toEqual({ batchItemFailures: [] });
+    expect(await queueHandler(event(good))).toEqual({ batchItemFailures: [] }); // SQS redelivery
+    expect(fanOut).toHaveBeenCalledWith(pid, expect.arrayContaining([expect.objectContaining({ type: 'click', sessionId: 'sess-queued', country: 'SE' })]));
+
+    expect(await count()).toBe(events.length);
+    const [{ ts }] = await rawQuery<{ ts: Date }>(pid, { from: new Date(0), to: new Date(now + 86400e3) },
+      "SELECT min(ts) AS ts FROM events WHERE project_id = $1 AND session_id = 'sess-queued'", [pid]);
+    expect(new Date(ts).getTime()).toBe(sent - 30_000);
+  });
+
   it('pairs a device and serves the widget API with its token', async () => {
     const w = async <T = any>(path: string, token: string | undefined, query?: Record<string, string>, method = 'GET'): Promise<{ status: number; body: T }> => {
       const res = (await widget(httpEvent(method, path, { query, headers: token ? { authorization: `Bearer ${token}` } : {} }))) as Res;

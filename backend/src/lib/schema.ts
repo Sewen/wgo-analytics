@@ -254,4 +254,15 @@ export const SCHEMA_STATEMENTS: string[] = [
    )`,
   // funnel steps before a goal (GoalStep[] JSON; NULL = none)
   `ALTER TABLE goals ADD COLUMN IF NOT EXISTS steps jsonb`,
+
+  // who an anonymous visitor turned out to be (lib/identities.ts): the first user id seen on each anon_id.
+  // Queries resolve the user of that browser's anonymous events through it.
+  `CREATE TABLE IF NOT EXISTS identities (
+     project_id uuid NOT NULL,
+     anon_id text NOT NULL,
+     user_id text NOT NULL,
+     created_at timestamptz NOT NULL DEFAULT now(),
+     PRIMARY KEY (project_id, anon_id)
+   )`,
+  `CREATE INDEX ASYNC IF NOT EXISTS identities_created_idx ON identities (project_id, created_at)`,
 ];

@@ -1,5 +1,6 @@
 import type { SQSClient } from '@aws-sdk/client-sqs';
 import type { EventRow } from '../events';
+import { recordIdentities } from '../identities';
 import { writeRows } from './write';
 
 /**
@@ -34,7 +35,7 @@ export async function storeEvents(rows: EventRow[]): Promise<void> {
   if (!rows.length) return;
   const url = process.env.EVENTS_QUEUE_URL;
   if (!url) {
-    await writeRows('events', rows);
+    await Promise.all([writeRows('events', rows), recordIdentities(rows)]);
     return;
   }
   const { SQSClient, SendMessageCommand } = await import('@aws-sdk/client-sqs');

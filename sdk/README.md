@@ -1,6 +1,6 @@
 # wgo-sdk
 
-Drop-in browser SDK for WGO web analytics. No runtime dependencies; the gzipped script-tag build is under 9 KB.
+Drop-in browser SDK for WGO web analytics. No runtime dependencies; the gzipped script-tag build is under 10 KB.
 
 ## Install
 
@@ -22,6 +22,7 @@ The script auto-initialises from its own tag and exposes `window.WGO`. Supported
 | `data-capture-query-params` | Keep query strings in captured URLs |
 | `data-respect-do-not-track` | Disable entirely when the browser sends DNT |
 | `data-cookieless` | Store nothing on the device (see `cookieless` below) |
+| `data-auto-identify` | Identify logged-in users from your app's JWT (see [Identifying users](#identifying-users)) |
 
 ```js
 WGO.track('signup_clicked', { plan: 'pro' })
@@ -34,11 +35,12 @@ npm install ./path/to/wgo/sdk   # not on npm yet
 ```
 
 ```ts
-import { init, track, identify, page, captureException, setContext, flush, shutdown } from 'wgo-sdk'
+import { init, track, identify, reset, page, captureException, setContext, flush, shutdown } from 'wgo-sdk'
 
 init({ writeKey: 'wk_...', endpoint: 'https://api.example.com', release: '1.4.0' })
 
 identify('user_42', { plan: 'pro' })   // `u` is attached to all subsequent events
+reset()                                // on logout: forget the user, continue as a new anonymous visitor
 track('checkout_started', { value: 99 })
 page()                                 // manual pageview (SPA navigation is automatic)
 captureException(err, { orderId: 7 })
@@ -46,6 +48,35 @@ setContext({ tenant: 'acme' })         // merged into every batch's ctx
 await flush()
 shutdown()                             // removes listeners, restores fetch/XHR/history
 ```
+
+## Identifying users
+
+Events carry an anonymous id per browser (`a`). Once a visitor is identified, every event also carries their
+user id (`u`), and the visitor's **earlier anonymous events are attributed to them as well**: the backend
+remembers which user each anonymous id turned out to be and resolves `userId` through it when you query, so a
+`userId` filter shows the whole visit, including the pages before the login. Each anonymous id belongs to the
+first user identified on it.
+
+There are two ways to identify:
+
+* **`identify(userId, traits?)`**: you pass the id. It is remembered on this browser until `reset()`, and a
+  token never overrides it.
+* **`autoIdentify: true`** (`data-auto-identify` on the script tag): the SDK reads the JWT your app already
+  holds and uses the first claim it finds of `email`, `preferred_username`, `upn`, `unique_name`, `username`,
+  `cognito:username` and `sub`. It finds tokens:
+  * in `localStorage`, `sessionStorage` and readable cookies, as a bare token or inside a JSON value (Amplify /
+    Cognito, Auth0, MSAL and Firebase store them like this). The SDK looks when it starts, before each
+    pageview, and when another tab changes storage;
+  * in the `Authorization: Bearer …` header of your app's `fetch` and XHR requests. A stored token wins over a
+    header token, because access tokens often name the user only by an opaque `sub`.
+
+  Tokens are decoded, not verified, and expired tokens are ignored. The `identify` event the SDK sends has
+  `traits: { $source: 'jwt' }`. When a token names a different user than before, someone else is using the
+  browser: the SDK starts a new anonymous id and session for them. It is off by default because email
+  addresses are personal data.
+
+Call **`reset()`** when a user logs out. It sends the queued events, then forgets the user id and continues with
+a new anonymous id and session, so whoever uses the browser next isn't counted as the previous user.
 
 Importing the package is SSR-safe (nothing touches `window`/`document` until `init`, which is a no-op on the server). Calling `init` twice warns and is ignored.
 
@@ -90,6 +121,7 @@ Only `writeKey` and `endpoint` are required.
 | `release`, `environment` | | Attached to `ctx` |
 | `debug` | `false` | Console diagnostics |
 | `priorityClicks` | `[]` | CSS selectors; matching clicks use priority latency (for realtime watches) |
+| `autoIdentify` | `false` | Use the email or username in your app's JWT as the user id ([details](#identifying-users)) |
 
 **Compression and CORS.** Uncompressed batches are sent as `text/plain;charset=UTF-8`, a CORS simple request (no preflight). Compressed batches use `application/octet-stream`, which browsers preflight cross-origin; the server must answer the `OPTIONS` request, or set `compress: false`. The backend detects gzip by its magic bytes (`1f 8b`). Beacon sends are never compressed.
 

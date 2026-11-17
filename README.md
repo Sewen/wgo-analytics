@@ -28,7 +28,7 @@ Events show up within seconds.
   toast or browser notification.
 - **Visitor map:** a zoomable map shows where visitors are, to the nearest city. Locations come from CloudFront
   at the edge, and IP addresses are never stored.
-- **Small SDK:** about 9 KB gzipped. It batches and compresses events, and holds on to them while the visitor
+- **Small SDK:** about 10 KB gzipped. It batches and compresses events, and holds on to them while the visitor
   is offline.
 
 ![The Live page: click counters for the signup button, add to cart and checkout, and a world map with recent events at each location](dashboard/public/home/live.jpg)
@@ -358,7 +358,8 @@ forward cookies to the backend either, so cookies your own site sets on the same
 |---|---|---|
 | `wgo:aid` | A random anonymous visitor id (UUID), so returning visitors are counted once | The visitor clears site data |
 | `wgo:sid` | Session id, time of last activity, and whether this session is sampled | Replaced after 30 minutes of inactivity (`sessionTimeout`) |
-| `wgo:uid` | The user id you pass to `WGO.identify()` | The visitor clears site data. Only set if you call `identify` |
+| `wgo:uid` | The user id you pass to `WGO.identify()`, or the one `autoIdentify` read from your app's JWT | `WGO.reset()` or the visitor clears site data. Only set if you identify users |
+| `wgo:um` | `1` when the user id came from `identify()`, so a JWT doesn't replace it | Same as `wgo:uid` |
 | `wgo:q:<writeKey>` | Events that haven't been sent yet, e.g. while offline | They are delivered. Turn off with `persist: false` |
 
 **What is collected.** With each event: the anonymous id, the session id, the page URL and referrer (query
@@ -368,6 +369,12 @@ IP addresses are never stored. For clicks, the SDK records the element's selecto
 its text, `aria-label` or the label of a form field. It never records what someone typed into a field, and it
 records no label for fields that look like passwords, secrets, tokens, CVV or social security numbers. Mark
 anything else private with `data-wgo-mask` or `data-wgo-ignore`.
+
+**User ids.** Events only carry a user id if you identify users: with `WGO.identify()`, or with
+`data-auto-identify`, which reads the email or username from a JWT your app keeps in the browser or sends in an
+`Authorization` header (see the [SDK README](sdk/README.md#identifying-users)). Both are off until you use
+them. An email address is personal data, so cover it in your privacy notice. Once a browser is identified, its
+earlier anonymous events are attributed to that user too. Call `WGO.reset()` on logout.
 
 **Consent.** Under EU and UK rules (the ePrivacy Directive and PECR), storing an identifier in `localStorage`
 is treated the same as setting a cookie. "No cookies" therefore doesn't mean you can skip consent. Whether
@@ -421,11 +428,13 @@ Registered clients are not cleaned up automatically. List them with
 
 <picture>
   <source media="(prefers-color-scheme: dark)" srcset="docs/architecture-dark.svg">
-  <img alt="WGO architecture: web apps and OpenTelemetry services send data through CloudFront to API Gateway; Lambdas queue it in SQS and write Parquet to S3; a maintenance Lambda compacts it and rolls it up into Aurora DSQL; the dashboard, widget, kiosks and MCP clients query it through Lambdas running DuckDB, and get live events over a WebSocket API" src="docs/architecture-light.svg">
+  <img alt="WGO architecture: web apps and OpenTelemetry services send data through CloudFront to API Gateway, which queues it in SQS; Lambdas process it and write Parquet to S3; a maintenance Lambda compacts it and rolls it up into Aurora DSQL; the dashboard, widget, kiosks and MCP clients query it through Lambdas running DuckDB, and get live events over a WebSocket API" src="docs/architecture-light.svg">
 </picture>
 
-The SDK and OTLP intake answer as soon as the data is queued (OTLP requests go from API Gateway straight to
-SQS, with no Lambda in the request path); Lambdas behind SQS write each batch to S3 as Parquet. Queries run
+The SDK and OTLP intake answer as soon as the data is queued (API Gateway writes SDK batches and OTLP requests
+straight to SQS, with no Lambda in the request path, so pages and exporters never wait for a cold start);
+Lambdas behind SQS write each batch to S3 as Parquet. Write keys are checked behind the queue: data sent with
+a wrong key is accepted, then dropped and logged. Queries run
 DuckDB inside the Lambda against only the project's files for the days in range, and long ranges use the
 hourly rollups in DSQL. The sections below cover each part.
 
@@ -466,8 +475,9 @@ transaction, `CREATE INDEX ASYNC`, and 3,000 rows or fewer per transaction. See
 
 **Live watches.** The dashboard opens a WebSocket (Cognito ID token + project id), then subscribes with a
 list of watches (`{type:'click', name:'signup-cta'}`, selector/text/path substrings…) or the firehose. The
-ingest Lambda queues the batch for storage and, in parallel, matches it against the project's subscriptions and
-pushes hits straight to those connections. Click-to-screen latency is the SDK flush delay plus about 100 ms.
+ingest Lambda takes each batch off its queue (no batching window), queues it for storage and, in parallel, matches
+it against the project's subscriptions and pushes hits straight to those connections. Click-to-screen latency is
+the SDK flush delay plus the queue hop, typically well under a second.
 
 **Visitor location and map.** `/ingest` and `/v1/*` go through the same CloudFront distribution as the
 dashboard. CloudFront looks up each viewer's IP at the edge, at no extra cost, and forwards

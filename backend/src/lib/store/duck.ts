@@ -1,5 +1,6 @@
 import { createRequire } from 'node:module';
 import type { DuckDBConnection, DuckDBInstance } from '@duckdb/node-api';
+import { syncIdentities } from '../identities';
 import { forgetFileLists, listCache } from './cache';
 import { location, type StoredFile } from './files';
 import { dayOf, DUCK_TYPES, projectPrefix, RAW_TABLES, TABLES, type RawTable } from './tables';
@@ -70,6 +71,8 @@ async function createInstance(): Promise<DuckDBInstance> {
     const cols = TABLES[t].columns.map(([n, type]) => `"${n}" ${DUCK_TYPES[type]}`).join(', ');
     await c.run(`CREATE TABLE empty_${t} (${cols}, project_id VARCHAR, dt DATE)`);
   }
+  // anon_id → user_id of every project queried so far (lib/identities.ts), shared by all connections
+  await c.run('CREATE TABLE identities (project_id VARCHAR, anon_id VARCHAR, user_id VARCHAR, PRIMARY KEY (project_id, anon_id))');
   idle.push(c);
   return inst;
 }
@@ -174,6 +177,31 @@ export function relation(table: RawTable, files: StoredFile[]): string {
   return parts.join(' UNION ALL BY NAME ');
 }
 
+// ---------------------------------------------------------------- identities
+
+const IDENTITY_CHUNK = 1000;
+
+async function insertIdentities(pid: string, rows: Array<[string, string]>): Promise<void> {
+  await withConnection(async (c) => {
+    for (let i = 0; i < rows.length; i += IDENTITY_CHUNK) {
+      const params: unknown[] = [];
+      const values = rows.slice(i, i + IDENTITY_CHUNK).map(([a, u]) => `(${sqlString(pid)}, $${params.push(a)}, $${params.push(u)})`);
+      await run(c, `INSERT OR IGNORE INTO identities VALUES ${values.join(', ')}`, params);
+    }
+  });
+}
+
+/** SQL that reads user_id, by name or through `*`. Other queries skip the join. */
+const READS_USER = /\buser_id\b|\bSELECT\s+(?:DISTINCT\s+)?\*|\w\.\*/i;
+
+/**
+ * Events with `user_id` resolved: an event without one gets the user its browser (anon_id) identified as,
+ * before or after it (lib/identities.ts). Events that carry their own user id keep it.
+ */
+const resolvedEvents = (pid: string, rel: string) =>
+  `SELECT e.* REPLACE (coalesce(e.user_id, i.user_id) AS user_id) FROM (${rel}) e
+   LEFT JOIN identities i ON i.project_id = ${sqlString(pid)} AND i.anon_id = e.anon_id`;
+
 const TABLE_REF = new RegExp(`\\b(?:FROM|JOIN)\\s+(${RAW_TABLES.join('|')})\\b`, 'gi');
 
 /** True for errors that mean a listed file disappeared (merged or expired) before it was read. */
@@ -185,11 +213,15 @@ const isMissingFile = (err: unknown) => /404|No files found|No such file|not fou
  */
 export async function rawQuery<T = DuckRow>(pid: string, w: Window, sql: string, params: unknown[] = []): Promise<T[]> {
   const tables = [...new Set([...sql.matchAll(TABLE_REF)].map((m) => m[1].toLowerCase() as RawTable))];
+  const resolve = tables.includes('events') && READS_USER.test(sql) && (await syncIdentities(pid, (rows) => insertIdentities(pid, rows)));
   for (let attempt = 0; ; attempt++) {
     const lists = await Promise.all(tables.map((t) => filesFor(t, pid, w)));
     try {
       return await withConnection(async (c) => {
-        for (let i = 0; i < tables.length; i++) await c.run(`CREATE OR REPLACE TEMP VIEW ${tables[i]} AS ${relation(tables[i], lists[i])}`);
+        for (let i = 0; i < tables.length; i++) {
+          const rel = relation(tables[i], lists[i]);
+          await c.run(`CREATE OR REPLACE TEMP VIEW ${tables[i]} AS ${resolve && tables[i] === 'events' ? resolvedEvents(pid, rel) : rel}`);
+        }
         return run<T>(c, sql, params);
       });
     } catch (err) {

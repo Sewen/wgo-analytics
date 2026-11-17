@@ -8,6 +8,7 @@ import { ErrorReporter } from './capture/errors'
 import { startHttp } from './capture/http'
 import { startPageviews } from './capture/pageviews'
 import { startVitals } from './capture/vitals'
+import { bearer, findIdentity, jwtIdentity } from './identity'
 import { ls, memoryStore, on, uuid } from './util'
 
 function resolve(c: Config): ResolvedConfig {
@@ -35,6 +36,7 @@ function resolve(c: Config): ResolvedConfig {
     environment: c.environment,
     debug: c.debug ?? false,
     priorityClicks: c.priorityClicks ?? [],
+    autoIdentify: c.autoIdentify ?? false,
   }
 }
 
@@ -47,6 +49,8 @@ export class Client {
   private ingest: string
   private stops: (() => void)[] = []
   private stopped = false
+  private lastAuth?: string
+  private lastScan = 0
 
   constructor(config: Config) {
     const cfg = (this.cfg = resolve(config))
@@ -78,6 +82,7 @@ export class Client {
       clean: (u) => this.clean(u),
       log,
     }
+    if (cfg.autoIdentify) hooks.onAuth = (v) => this.fromHeader(v)
     this.errors = new ErrorReporter(hooks)
 
     this.transport.restore()
@@ -88,7 +93,12 @@ export class Client {
     }
     start(ac.clicks, () => startClicks(hooks))
     start(ac.errors, () => this.errors.listen())
-    start(ac.http, () => startHttp(hooks))
+    start(ac.http || cfg.autoIdentify, () => startHttp(hooks, ac.http))
+    if (cfg.autoIdentify) {
+      this.scan()
+      // another tab logged in or out
+      this.stops.push(on(window, 'storage', () => { if (Date.now() - this.lastScan > 1000) this.scan() }))
+    }
     start(ac.vitals, () => startVitals(hooks)) // before our hide listener below, see vitals.ts
     start(ac.pageviews, () => startPageviews(hooks))
 
@@ -107,6 +117,7 @@ export class Client {
   emit(t: EventType, d?: object, o: EmitOpts = {}): WireEvent | null {
     try {
       if (this.stopped) return null
+      if (t === 'pageview') this.scan() // a login usually ends with a navigation: the pageview already carries u
       const s = this.session.touch()
       if (!s.sampled) return null
       let e: WireEvent = { id: uuid(), t, ts: Date.now(), s: s.id, url: this.clean(location.href), path: location.pathname }
@@ -130,8 +141,39 @@ export class Client {
 
   track(name: string, props?: Record<string, unknown>): void { this.emit('custom', { name, props }) }
   identify(userId: string, traits?: Record<string, unknown>): void {
-    this.session.identify(userId)
+    this.setUser(userId, traits, true)
+  }
+
+  private setUser(id: string, traits: Record<string, unknown> | undefined, manual: boolean): void {
+    this.session.identify(id, manual)
     this.emit('identify', { traits })
+  }
+
+  /** A user found in a token. A different user than before means someone else is using this browser. */
+  private auto(id: string | undefined): void {
+    if (!id || this.session.manual || id === this.session.uid) return
+    if (this.session.uid) this.reset()
+    this.setUser(id, { $source: 'jwt' }, false)
+  }
+
+  private scan(): void {
+    if (!this.cfg.autoIdentify) return
+    this.lastScan = Date.now()
+    this.auto(findIdentity())
+  }
+
+  private fromHeader(v: string): void {
+    const t = bearer(v)
+    if (!t || t === this.lastAuth) return
+    this.lastAuth = t
+    // a stored token wins: an access token in the header often names the user only by an opaque `sub`
+    this.auto(findIdentity() ?? jwtIdentity(t)?.[1])
+  }
+
+  /** Logout: send what's queued as the current visitor, then continue as a new anonymous one. */
+  reset(): void {
+    this.transport.flushBeacon()
+    this.session.reset()
   }
   page(): void { this.emit('pageview', undefined, { ref: document.referrer ? this.clean(document.referrer) : undefined }) }
   captureException(error: unknown, extra?: object): void { try { this.errors.manual(error, extra) } catch { /* ignore */ } }

@@ -3,8 +3,10 @@ import { ls, uuid, type Store } from './util'
 interface Rec { id: string; last: number; smp: 0 | 1 }
 
 export class Session {
-  readonly aid: string
+  aid: string
   uid?: string
+  /** the user id came from the app's identify(), not a token: tokens don't override it */
+  manual: boolean
   private cur?: Rec
   private wrote = 0
 
@@ -13,6 +15,7 @@ export class Session {
     if (!a) { a = uuid(); store.set('wgo:aid', a) }
     this.aid = a
     this.uid = store.get('wgo:uid') || undefined
+    this.manual = !!this.uid && store.get('wgo:um') === '1'
   }
 
   private read(): Rec | undefined {
@@ -37,8 +40,22 @@ export class Session {
     return { id: r.id, sampled: r.smp === 1 }
   }
 
-  identify(id: string): void {
+  identify(id: string, manual = true): void {
     this.uid = id
     this.store.set('wgo:uid', id)
+    this.manual = manual
+    if (manual) this.store.set('wgo:um', '1')
+    else this.store.del('wgo:um')
+  }
+
+  /** Forget the user and start over as a new anonymous visitor with a new session (logout). */
+  reset(): void {
+    this.aid = uuid()
+    this.store.set('wgo:aid', this.aid)
+    this.uid = this.cur = undefined
+    this.manual = false
+    this.store.del('wgo:uid')
+    this.store.del('wgo:um')
+    this.store.del('wgo:sid')
   }
 }

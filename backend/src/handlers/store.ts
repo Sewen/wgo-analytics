@@ -1,4 +1,5 @@
 import type { SQSEvent } from 'aws-lambda';
+import { recordIdentities } from '../lib/identities';
 import { eventsFromMessages } from '../lib/store/queue';
 import { writeRows } from '../lib/store/write';
 
@@ -9,6 +10,6 @@ import { writeRows } from '../lib/store/write';
  */
 export async function eventsHandler(event: SQSEvent): Promise<{ written: number }> {
   const rows = eventsFromMessages(event.Records.map((r) => r.body));
-  await writeRows('events', rows);
+  await Promise.all([writeRows('events', rows), recordIdentities(rows)]);
   return { written: rows.length };
 }

@@ -34,6 +34,8 @@ export function track(name: string, props?: Record<string, unknown>): void { cur
 export function identify(userId: string, traits?: Record<string, unknown>): void { current()?.identify(userId, traits) }
 export function page(): void { current()?.page() }
 export function captureException(error: unknown, extra?: object): void { current()?.captureException(error, extra) }
+/** Call on logout: forgets the user and continues as a new anonymous visitor. */
+export function reset(): void { current()?.reset() }
 export function setContext(obj: Record<string, unknown>): void { current()?.setContext(obj) }
 export function flush(): Promise<void> { const c = current(); return c ? c.flush() : Promise.resolve() }
 /** For debugging from the console: `WGO.status()` */

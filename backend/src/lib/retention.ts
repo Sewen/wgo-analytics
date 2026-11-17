@@ -64,8 +64,15 @@ export async function runRetention(deadline: number, rolledUntil: number, now = 
          SELECT fingerprint FROM error_stacks WHERE project_id = $1 AND updated_at < $2 LIMIT 500)`,
       [p.id, new Date(cutoff)], 500, deadline,
     );
+    // a browser's anonymous events come before its identity is recorded: an expired pair has no events left to
+    // resolve, and a user who is still active is recorded again by the event writer
+    const identitiesDone = stacksDone && await deleteSimple(
+      `DELETE FROM identities WHERE project_id = $1 AND anon_id IN (
+         SELECT anon_id FROM identities WHERE project_id = $1 AND created_at < $2 LIMIT 500)`,
+      [p.id, new Date(Math.min(cutoff, rolledUntil))], 500, deadline,
+    );
     const rollCutoff = new Date(now - ROLLUP_RETENTION_DAYS * DAY);
-    const rollupsDone = stacksDone && await deleteSimple(
+    const rollupsDone = identitiesDone && await deleteSimple(
       `DELETE FROM rollups WHERE project_id = $1 AND (dim, hour, key) IN (
          SELECT dim, hour, key FROM rollups WHERE project_id = $1 AND hour < $2 LIMIT 500)`,
       [p.id, rollCutoff], 500, deadline,
