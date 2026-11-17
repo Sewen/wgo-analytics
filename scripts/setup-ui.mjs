@@ -72,7 +72,7 @@ function commit(text) {
   rows = 0;
 }
 
-const showCursor = () => stdout.write('\x1b[?25h');
+const showCursor = () => stdout.isTTY && stdout.write('\x1b[?25h');
 process.on('exit', showCursor);
 
 // ── keys ──────────────────────────────────────────────────────────────────────────────────────────────

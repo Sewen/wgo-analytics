@@ -161,11 +161,23 @@ Optional:
 
 ```bash
 git clone <this repo> wgo && cd wgo
-cp deploy.env.example deploy.env   # optional: edit the settings below
-AWS_REGION=eu-west-1 ./scripts/deploy.sh
+npm run setup
 ```
 
-The script:
+`npm run setup` is a wizard for your first deploy. You don't need `npm install` first. It asks for:
+
+- your AWS profile and region (it checks that Aurora DSQL is available there)
+- your domain: it finds the Route 53 zone, or a matching certificate if your DNS is elsewhere
+- which email domains can sign in, with a live check of test addresses
+- which features to turn on
+
+It saves your answers to `deploy.env` and can start the deploy for you. Run it again whenever you want to change a
+setting. Your current settings are the defaults, and keys it doesn't ask about are kept.
+
+To skip the wizard, copy `deploy.env.example` to `deploy.env`, edit it, and run `./scripts/deploy.sh` (or
+`npm run deploy`).
+
+The deploy:
 1. Creates a DNS-validated certificate in us-east-1, if you set a custom domain in Route 53.
 2. Installs, type-checks and unit-tests the backend, then builds and deploys it with SAM. A migration runs the
    database schema as part of the deploy.
@@ -199,7 +211,8 @@ The first deploy takes several minutes, mostly for CloudFront. Without a custom 
 
 ### Configuration
 
-Set these as environment variables or in `deploy.env` (gitignored). They map to stack parameters, so you can
+`npm run setup` writes most of these for you. You can also set them as environment variables or in `deploy.env`
+(gitignored). They map to stack parameters, so you can
 change them later by re-running the deploy.
 
 | Variable | Default | |
@@ -523,6 +536,7 @@ See [android/README.md](android/README.md).
 | [dashboard/](dashboard/) | React dashboard: accounts, projects, install snippets, analytics, live watches, map, traces/logs/metrics |
 | [android/](android/) | Android home-screen widget app. [README](android/README.md) |
 | [examples/demo.html](examples/demo.html) | Demo shop page that exercises every capture type (`?auto=1` drives itself) |
+| [scripts/setup.mjs](scripts/setup.mjs) | `npm run setup`: interactive first-deploy wizard that writes `deploy.env` |
 | [scripts/deploy.sh](scripts/deploy.sh) | One-shot deploy of everything |
 
 ## Local development

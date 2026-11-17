@@ -232,8 +232,7 @@ async function stepAws(n, total) {
       message: 'What now?',
       options: [
         ...(sso ? [{ value: 'login', label: `Sign in with aws sso login --profile ${cfg.profile}` }] : []),
-        { value: 'retry', label: 'Try again' },
-        ...(profiles.length > 1 ? [{ value: 'pick', label: 'Pick another profile' }] : []),
+        { value: 'retry', label: profiles.length > 1 ? 'Try again or pick another profile' : 'Try again' },
         { value: 'quit', label: 'Quit' },
       ],
     });
@@ -250,7 +249,11 @@ async function stepAws(n, total) {
       message: 'Which region?',
       help: 'Pick one close to your users. It must offer Aurora DSQL; that is checked next.',
       options: [
-        ...codes.map((r) => ({ value: r, label: r, hint: [REGIONS[r], r === profileRegion ? 'your profile default' : ''].filter(Boolean).join(' · ') })),
+        ...codes.map((r) => ({
+          value: r,
+          label: REGIONS[r] ? `${r.padEnd(15)} ${REGIONS[r]}` : r,
+          hint: r === profileRegion ? 'your profile default' : '',
+        })),
         { value: '', label: 'Another region…' },
       ],
       initial: current,
